@@ -26,7 +26,7 @@ A team captain is a member with the role `Team Captains`.
 
  - `!ban map`, bans map `map` from the map list available in the pick & ban sequence. `map` is case-insensitively matched at 80% with available maps;
  - `!pick map`, same as `!ban` excepts it is used to pick a map (best-of-3 only);
- - `!side side`, chooses the side, either attack or defense (best-of-3 only).
+ - `!side side`, chooses the side, either attack or defense.
 
 **Note**: The above commands are only available in a match chat channel created by the bot itself.
 
@@ -43,7 +43,7 @@ A judge referee is a member with Discord permission `manage roles`.
    5. Prints the summary of elected maps and sides;
  - `!bo3 @teamA @teamB`, same as `!bo1` excepts it creates a best-of-3 chat channel;
  - `!ban`, `!pick` and `!side` commands (see [Team captains](#team-captains)) are available to
-   referees so that they test or can bridge team captains choice if they are not in Discord server.
+   referees so that they can test or bridge team captains choice if they are not in Discord server.
 
 ### Admins commands
 
@@ -91,14 +91,7 @@ This link should give the following permissions:
 
 **Note**: Make sure the bot role is just below the admin role (above the roles it manages)
 
-6. Create the `members.csv` file (see [Member list](#member-list) section)
-
-7. Run RoleKeeper
-```
-(venv) $ python ./main.py
-```
-
-8. Create the mandatory roles in Discord server:
+6. Create the mandatory roles in Discord server:
  - `Group A` to `Group F` (if more groups are needed, edit `rolekeeper.py` line 76);
  - `Team Captains`;
  - `WF_mods referees`;
@@ -106,7 +99,14 @@ This link should give the following permissions:
 
 **Note**: Make sure these roles are below `RoleKeeper` role in Discord role list so that it can manage them.
 
-Once everything is setup, the only things to repeat are steps 6 and 7.
+7. Create the `members.csv` file (see [Member list](#member-list) section)
+
+8. Run RoleKeeper
+```
+(venv) $ python ./main.py
+```
+
+Once everything is setup, the only things to repeat are steps 7 and 8.
 
 ## Member list
 
@@ -128,11 +128,11 @@ For instance, once `ezpz#4242` joins the server, he will be:
  - Assigned roles `Team Captains`, `Group A` and `Noobs team`.
 
 **Note**: Automatic role assignement is made only on members that do not have _any_ role.
-If for some reason a member has extra roles, the bot will not process him and will have to be handled manually by a referee.
+If for some reason a member has extra roles, he will not be processed and will have to be handled manually by a referee.
 
 ## Recommandations
 
-- It is recommanded to create a chat channel `#bot_commands` that both bot and referees can see and talk in to enter all bot commands.
+- It is recommanded to create a chat channel `#bot_commands` that both bot and referees can see and talk in order to enter all bot commands.
   It will ease command tracking and prevent spam in lobby channels.
 
 - Groups are useful to separate teams among referees. A referee handles one and only one group,
@@ -150,4 +150,4 @@ If for some reason a member has extra roles, the bot will not process him and wi
 - [ ] Handle unicode team names in order to create valid Discord chat channel names.
 - [ ] (idea) Import `members.csv` directly from esports website
 - [ ] (idea) Automatically launch `!bo1`/`!bo3` based on info from esports website
-
+- [ ] (idea) Handle match result gathering (with vote from both teams)
