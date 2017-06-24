@@ -103,7 +103,7 @@ class RoleKeeper:
         self.groups[server] = {}
 
         # Reparse team captain file
-        self.parse_teams(server, self.config['team_captain_file'][server.name])
+        self.parse_teams(server, self.config['servers'][server.name]['captains'])
 
         # Refill group cache
         self.cache_role(server, 'captain')
@@ -241,7 +241,7 @@ class RoleKeeper:
                               maps='\n'.join([ ' - {}'.format(m) for m in maps ]))
 
         await self.client.send_message(channel, msg)
-        await match.status(handle)
+        await match.begin(handle)
 
     # Returns if a member is a team captain in the given channel
     def is_captain_in_match(self, member, channel):
@@ -280,6 +280,19 @@ class RoleKeeper:
         handle = Handle(self, member, channel)
         await self.matches[channel.name].choose_side(handle, side_safe, force)
 
+    # Broadcast information that the match is or will be streamed
+    async def stream_match(self, message, match_id):
+        member = message.author
+        channel = discord.utils.get(member.server.channels, name=match_id)
+        if channel:
+            await self.client.send_message(
+                channel, ':eye::popcorn: _**{}** will stream this match!_ :movie_camera::satellite:'\
+                .format(member.nick if member.nick else member.name))
+            await self.reply(message, 'roger!')
+        else:
+            await self.repy(message, 'This match does not exist!')
+
+
 class Handle:
     def __init__(self, bot, member, channel):
         self.bot = bot
@@ -299,3 +312,18 @@ class Handle:
 
     async def send(self, msg):
         await self.bot.client.send_message(self.channel, msg)
+
+    async def broadcast(self, bcast_id, msg):
+        channels = []
+        try:
+            channels = self.bot.config['servers'][self.channel.server.name]['rooms'][bcast_id]
+        except:
+            print('WARNING: No broadcast configuration for "{}"'.format(bcast_id))
+            pass
+
+        for channel_name in channels:
+            channel = discord.utils.get(self.channel.server.channels, name=channel_name)
+            if channel:
+                await self.bot.client.send_message(channel, msg)
+            else:
+                print ('WARNING: Missing channel {}'.format(channel_name))

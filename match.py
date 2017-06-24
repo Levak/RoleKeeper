@@ -70,6 +70,14 @@ class Match:
 
         return True
 
+    async def begin(self, handle):
+        await self.status(handle)
+        await handle.broadcast('match_created', ':sparkle: Match created: `{match_id}`\n**{teamA}** vs **{teamB}**\n'\
+                               .format(teamA=self.teamA,
+                                       teamB=self.teamB,
+                                       match_id=handle.channel.name))
+
+
     async def ban_map(self, handle, banned_map, force=False):
         banned_map_id = self.find_map(banned_map)
 
@@ -141,6 +149,13 @@ class Match:
                                   map1=map_id,
                                   side=self.chosen_side))
 
+        await handle.broadcast('match_starting', ':arrow_forward: Match starting: `{match_id}`\n**{teamA}** vs **{teamB}**\n - Map: **{map1}** ({teamB} **{side}**)\n'\
+                               .format(teamA=self.teamA,
+                                       teamB=self.teamB,
+                                       map1=map_id,
+                                       side=self.chosen_side,
+                                       match_id=handle.channel.name))
+
 
 class MatchBo3(Match):
     def __init__(self, teamA, teamB, maps):
@@ -160,3 +175,12 @@ class MatchBo3(Match):
                                   map2=self.picked_maps[1],
                                   map3=map_id,
                                   side=self.chosen_side))
+
+        await handle.broadcast('match_starting', ':arrow_forward: Match starting: `{match_id}`\n**{teamA}** vs **{teamB}**\n - Map 1: **{map1}** ({teamB} **{side}**)\n - Map 2: **{map2}** ({teamA} **{side}**)\n - Tie-breaker map: **{map3}** ({teamB} **{side}**)\n'\
+                          .format(teamA=self.teamA,
+                                  teamB=self.teamB,
+                                  map1=self.picked_maps[0],
+                                  map2=self.picked_maps[1],
+                                  map3=map_id,
+                                  side=self.chosen_side,
+                                  match_id=handle.channel.name))

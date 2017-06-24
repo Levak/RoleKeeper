@@ -1,9 +1,6 @@
 {
     "app_bot_token": "--redacted--",
 
-    "team_captain_file" : {
-        "June Fast Cup": "members.csv",
-    },
 
     "maps": [ "Yard", "D-17", "Factory", "District", "Destination", "Palace", "Pyramid" ],
 
@@ -12,5 +9,15 @@
         "captain": "Team Captains",
         "streamer": "Streamers",
         "group": "Group {}"
+    },
+
+    "servers": {
+        "June Fast Cup": {
+            "captains": "members.csv",
+            "rooms": {
+                "match_created": [ "jfc_streamers" ],
+                "match_starting": [ "bot_referees", "jfc_streamers" ]
+            }
+        }
     }
 }

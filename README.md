@@ -38,7 +38,7 @@ A team captain is a member with the role `Team Captains`.
 
 ### Referees commands
 
-A judge referee is a member with Discord permission `manage roles`.
+A judge referee is a member with the `roles/referee` defined in `config.json`
 
  - `!say #channel message...`, makes bot say `message...` in `channel`. Note
    that `channel` has to be a valid chat-channel mention;
@@ -56,14 +56,24 @@ A judge referee is a member with Discord permission `manage roles`.
    are available to referees so that they can test or bridge team captains
    choice if they are not in Discord server.
 
+### Streamers commands
+
+A streamer is a member with the `roles/streamer` defined in `config.json`
+
+ - `!stream match_id`, will broadcast the information that `match_id` is
+   streamed by the one executing the command. The bot will provide `match_id`
+   to channels `servers/[server]/rooms/match_created` which streamers should
+   have access to.
+
 ### Admins commands
 
-An admin is someone that has access to the `config.json` file and bot launch.
+An admin is a member with Discord permission `manage roles`, someone that has
+access to the `config.json` file and bot launch.
 
  - `!refresh`, will crawl the server member list again to find members without
    any role and assign one if a team captain is found;
  - `!create_teams`, based on `members.csv`, create all the team roles in
-   advance (optional).  This can be helpful when `members.csv` is incomplete
+   advance (optional). This can be helpful when `members.csv` is incomplete
    and contains invalid Discord ID, but the teams are, allowing manual
    role-assigning by a referee.
 
@@ -101,8 +111,11 @@ $ source ./env/bin/activate
 ...
     "app_bot_token" = "--redacted--",
 ...
-    "team_captain_file" : {
-        "My Discord server": "members.csv",
+    "servers" : {
+        "My Discord server": {
+            "captains": "members.csv",
+            ...
+        }
     },
 ...
 ```
@@ -123,11 +136,13 @@ This link should give the following permissions:
 **Note**: Make sure the bot role is just below the admin role (above the roles
   it manages)
 
-6. Create the mandatory roles in Discord server:
- - `Group A` to `Group F` (if more groups are needed, edit `rolekeeper.py`
-   line 76);
+6. Create the mandatory roles in the Discord server (names can be changed
+   in `config.json`):
+ - `Group xxxx` _where xxxx are the group IDs present in `members.csv`
+   (e.g. `A` through `F`)_;
  - `Team Captains`;
  - `Referees`;
+ - `Streamers`.
 
 **Note**: Make sure these roles are below `RoleKeeper` role in Discord role
   list so that it can manage them.
@@ -140,6 +155,91 @@ This link should give the following permissions:
 ```
 
 Once everything is setup, the only things to repeat are steps 7 and 8.
+
+## Configuration
+
+The bot is configurable at startup with the file `config.json`. This file
+defines all the variable parameters supported by RoleKeeper, such as role
+names, member list path per servers, broadcast lists, etc.
+
+Here is an example of configuration file:
+
+**config.json**
+```
+{
+    "app_bot_token": "--redacted--",
+
+    "maps": [ "Yard", "D-17", "Factory", "District", "Destination", "Palace", "Pyramid" ],
+
+    "roles": {
+        "referee": "Referees",
+        "captain": "Team Captains",
+        "streamer": "Streamers",
+        "group": "Group {}"
+    },
+
+    "servers": {
+        "June Fast Cup": {
+            "captains": "members.csv",
+            "rooms": {
+                "match_created": [ "jfc_streamers" ],
+                "match_starting": [ "bot_referees", "jfc_streamers" ]
+            }
+        },
+
+        "JFCtest": {
+            "captains": "members_test.csv",
+            "rooms": {
+                "match_created": [ "streamers" ],
+                "match_starting": [ "referees", "streamers" ]
+            }
+        }
+    }
+}
+```
+
+### `app_bot_token`
+
+**String**. Token for the bot. Go to
+[Discord application page](https://discordapp.com/developers/applications/me#top),
+click on your application, then create a bot for the application and expand
+the _APP BOT TOKEN_.
+
+### `maps`
+
+**List of String**. All the available maps for the pick & ban sequences. Must
+  contain 7 elements.
+
+### `roles/referee`
+
+**String**. Name of the role used for Judge referees.
+
+### `roles/captain`
+
+**String**. Name of the role used for Team captains.
+
+### `roles/streamer`
+
+**String**. Name of the role used for Streamers.
+
+### `roles/group`
+
+**String**. Template name used for the Team Groups. Use `{}` to indicate the
+  location where the actual group ID will be in the name.
+
+### `servers/.../captains`
+
+**String**. Path to the member list file for that server.
+
+### `servers/.../rooms/match_created`
+
+**List of String**. Channels that will receive match creation notifications,
+  when either `!bo1` or `!bo3` is used.
+
+### `servers/.../rooms/match_starting`
+
+**List of String**. Channels that will receive match start notifications, when
+  ever the pick & ban sequence has ended.
 
 ## Member list
 
@@ -201,11 +301,11 @@ processed and will have to be handled manually by a referee.
   captains at the _last-minute_
 - [x] Cross-server non-interference (When the bot is invited in several
   Discord servers, it will run on the same member list)
-- [ ] Take `members.csv` as parameter
+- [ ] Take `config.json` as parameter
 - [x] Configurable role names and list
 - [x] Configurable map list
-- [ ] Forward pick & ban results in a room for a new `Streamer` role
-- [ ] Add `!stream` command for a new `Streamer` role to notify matches are streamed
+- [x] Forward pick & ban results in a room for a new `Streamer` role
+- [x] Add `!stream` command for a new `Streamer` role to notify matches are streamed
 - [x] Handle unicode team names in order to create valid Discord chat channel names.
 - [ ] (idea) Import `members.csv` directly from esports website
 - [ ] (idea) Automatically launch `!bo1`/`!bo3` based on info from esports website
