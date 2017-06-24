@@ -48,7 +48,7 @@ async def on_message(message):
                              is_bo3=False)
         else:
             await rk.reply(message,
-                           "Too much or not enough arguments:\n```!bo1 @xxx @yyy```")
+                           'Too much or not enough arguments:\n```!bo1 @xxx @yyy```')
 
     elif command == '!bo3' and is_ref:
         if len(message.role_mentions) == 2:
@@ -58,7 +58,7 @@ async def on_message(message):
                              is_bo3=True)
         else:
             await rk.reply(message,
-                           "Too much or not enough arguments:\n```!bo3 @xxx @yyy```")
+                           'Too much or not enough arguments:\n```!bo3 @xxx @yyy```')
 
     elif command == '!pick' and is_captain_in_match:
         await rk.pick_map(message.author, message.channel, args.split()[0], force=is_ref)
@@ -69,10 +69,27 @@ async def on_message(message):
 
     elif command == '!say' and is_ref:
         parts = args.split()
-        channel_id = parts[0][2:-1]
-        msg = args.replace(parts[0], '', 1)
-        channel = discord.utils.get(message.author.server.channels, id=channel_id)
-        await rk.client.send_message(channel, msg)
+        if len(parts) <= 1:
+            await rk.reply(message,
+                           'Not enough arguments:\n```!say #channel message...```')
+        else:
+            channel_id = parts[0]
+            if channel_id.startswith('<'):
+                channel_id = channel_id[2:-1]
+                channel = discord.utils.get(message.author.server.channels, id=channel_id)
+            else:
+                channel = discord.utils.get(message.author.server.channels, name=channel_id)
+
+            if channel:
+                msg = args.replace(parts[0], '', 1)
+                try:
+                    await rk.client.send_message(channel, msg)
+                except:
+                    await rk.reply(message,
+                                   'I do not see channel `#{}`'.format(channel.name))
+            else:
+                await rk.reply(message,
+                               'No channel named `#{}`'.format(channel_id))
 
     elif command == '!stream' and is_streamer:
         await rk.stream_match(message, args.split()[0])
