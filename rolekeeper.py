@@ -1,15 +1,13 @@
 import discord
 import asyncio
 import csv
-import re
 import random
 
 from teamcaptain import TeamCaptain
 from match import Match, MatchBo3
+from inputs import sanitize_input, translit_input
 
-maps = [ 'Yard', 'D-17', 'Factory', 'District', 'Destination', 'Palace', 'Pyramide' ]
-
-welcome_message_normal =\
+welcome_message_bo1 =\
 """
 Welcome {m_teamA} and {m_teamB}!
 -- Match **BEST OF 1** --
@@ -37,33 +35,48 @@ For instance, team A types `!ban Yard` which will then ban the map _Yard_ from t
 """
 
 class RoleKeeper:
-    def __init__(self, client, teams_csv):
+    def __init__(self, client, config):
         self.client = client
-        self.parse_teams(teams_csv)
         self.matches = {}
+        self.config = config
+        self.groups = {}
+        self.captains = {}
 
     # Parse members from CSV file
-    def parse_teams(self, filepath):
+    def parse_teams(self, server, filepath):
+        captains = {}
+        groups = {}
 
-        self.captains={}
+
         with open(filepath) as csvfile:
             reader = csv.reader(csvfile, delimiter=',', quotechar='"')
             for row in reader:
-                if len(row) <= 0:
+                # Skip empty lines and lines starting with #
+                if len(row) <= 0 or row[0].startswith('#'):
                     continue
-                if row[0].startswith('#'):
-                    continue
+
                 discord_id = row[0].strip()
                 team_name = row[1].strip()
                 nickname = row[2].strip()
-                group = row[3].strip()
-                self.captains[discord_id] = TeamCaptain(discord_id, team_name, nickname, group)
+                group_id = row[3].strip()
 
+                captains[discord_id] = \
+                    TeamCaptain(discord_id, team_name, nickname, group_id)
+
+                # If group is new to us, cache it
+                if group_id not in groups:
+                    group_name = self.config['roles']['group'].format(group_id)
+                    group = discord.utils.get(server.roles, name=group_name)
+                    print('{id}: {g}'.format(id=group_id, g=group))
+                    groups[group_id] = group
 
         print('Parsed teams:')
         # Print parsed members
-        for m in self.captains:
-            print('-> {}'.format(self.captains[m]))
+        for m in captains:
+            print('-> {}'.format(captains[m]))
+
+        self.captains[server] = captains
+        self.groups[server] = groups
 
     # Acknowledgement that we are succesfully connected to Discord
     async def on_ready(self):
@@ -71,44 +84,58 @@ class RoleKeeper:
 
         for server in self.client.servers:
             print('Server: {}'.format(server))
-
-            self.groups[server] = {}
-            for g in [ 'A', 'B', 'C', 'D', 'E', 'F' ]:
-                group_name = 'Group {}'.format(g)
-                group = discord.utils.get(server.roles, name=group_name)
-                print(group)
-                self.groups[server][g] = group
-
-            self.groups[server]['captain'] = discord.utils.get(server.roles, name='Team Captains')
-            self.groups[server]['modreferee'] = discord.utils.get(server.roles, name='WF_mods referees')
-            self.groups[server]['referee'] = discord.utils.get(server.roles, name='Referees')
-
             await self.refresh(server)
 
     async def on_member_join(self, member):
         await self.handle_member_join(member)
 
+    def cache_role(self, server, ref):
+        role_name = self.config['roles'][ref]
+        self.groups[server][ref] = discord.utils.get(server.roles, name=role_name)
+        if not self.groups[server][ref]:
+            print ('WARNING: Missing role "{}" in {}'.format(role_name, server.name))
+
+    # Refresh internal structures
+    # 1. Reparse team captain file
+    # 2. Refill group cache
+    # 3. Visit all members with no role
     async def refresh(self, server):
+        self.groups[server] = {}
+
+        # Reparse team captain file
+        self.parse_teams(server, self.config['team_captain_file'][server.name])
+
+        # Refill group cache
+        self.cache_role(server, 'captain')
+        self.cache_role(server, 'referee')
+        self.cache_role(server, 'streamer')
+
+        # Visit all members with no role
         for member in server.members:
             if len(member.roles) == 1:
                 print('- Member without role: {}'.format(member))
                 await self.handle_member_join(member)
 
+    # Go through the parsed captain list and create all team roles
     async def create_all_roles(self, server):
-        for _, captain in self.captains.items():
-            # Create role
-            role_name = '{} team'.format(captain.team)
-            role = discord.utils.get(server.roles, name=role_name)
-            if not role:
-                role = await self.client.create_role(
-                    server,
-                    name=role_name,
-                    permissions=discord.Permissions.none(),
-                    mentionable=True)
+        for _, captain in self.captains[server].items():
+            await self.create_team_role(server, captain.team)
 
-                print('Create new role <{role}>'\
-                      .format(role=role_name))
+    # Create team captain role
+    async def create_team_role(self, server, team_name):
+        role_name = '{} team'.format(team_name)
+        role = discord.utils.get(server.roles, name=role_name)
+        if not role:
+            role = await self.client.create_role(
+                server,
+                name=role_name,
+                permissions=discord.Permissions.none(),
+                mentionable=True)
 
+            print('Create new role <{role}>'\
+                  .format(role=role_name))
+
+        return role
 
     # Whenever a new member joins into the Discord server
     # 1. Create a user group just for the Team captain
@@ -117,7 +144,9 @@ class RoleKeeper:
     # 4. Change nickname of Team captain
     async def handle_member_join(self, member):
         discord_id = '{}#{}'.format(member.name, member.discriminator)
-        if discord_id not in self.captains:
+        server = member.server
+
+        if discord_id not in self.captains[server]:
             print('WARNING: New user "{}" not in captain list'\
                   .format(discord_id))
             return
@@ -125,34 +154,23 @@ class RoleKeeper:
         print('Team captain "{}" joined server'\
               .format(discord_id))
 
-        captain = self.captains[discord_id]
-        server = member.server
+        captain = self.captains[server][discord_id]
 
         # Create role
-        role_name = '{} team'.format(captain.team)
-        role = discord.utils.get(server.roles, name=role_name)
-        if not role:
-            role = await self.client.create_role(
-                member.server,
-                name=role_name,
-                permissions=discord.Permissions.none(),
-                mentionable=True)
-
-            print('Create new role <{role}>'\
-                  .format(role=role_name))
+        team_role = await self.create_team_role(server, captain.team)
 
         # Assign user roles
         group_role = self.groups[server][captain.group]
         captain_role = self.groups[server]['captain']
 
-        if role and captain_role and group_role:
-            await self.client.add_roles(member, role, captain_role, group_role)
+        if team_role and captain_role and group_role:
+            await self.client.add_roles(member, team_role, captain_role, group_role)
         else:
             print('ERROR: Missing one role out of R:{} C:{} G:{}'\
-                  .format(role, captain_role, group_role))
+                  .format(team_role, captain_role, group_role))
 
         print('Assigned role <{role}> to "{id}"'\
-              .format(role=role_name, id=discord_id))
+              .format(role=team_role.name, id=discord_id))
 
         # Change nickname of team captain
         nickname = '{}'.format(captain.nickname)
@@ -172,18 +190,16 @@ class RoleKeeper:
     # 1. Create the text channel
     # 2. Add permissions to read/send to both teams, and the judge
     # 3. Send welcome message
-    # 4. TODO Register the match to internal logic for commands like !ban x !pick x
+    # 4. Register the match to internal logic for commands like !ban x !pick x
     async def matchup(self, server, _teamA, _teamB, is_bo3=False):
         randomized = [ _teamA, _teamB ]
         random.shuffle(randomized)
         teamA, teamB = randomized[0], randomized[1]
 
-        unsafe_chars = re.compile(r'[^a-zA-Z0-9]')
-        teamA_name_safe = unsafe_chars.sub('', teamA.name.replace(' team', '').lower())
-        teamB_name_safe = unsafe_chars.sub('', teamB.name.replace(' team', '').lower())
+        teamA_name_safe = sanitize_input(translit_input(teamA.name.replace(' team', '')))
+        teamB_name_safe = sanitize_input(translit_input(teamB.name.replace(' team', '')))
         channel_name = 'match_{}_vs_{}'.format(teamA_name_safe, teamB_name_safe)
 
-        mod_role = self.groups[server]['modreferee']
         ref_role = self.groups[server]['referee']
 
         read_perms = discord.PermissionOverwrite(read_messages=True, send_messages=True)
@@ -199,7 +215,6 @@ class RoleKeeper:
                 (teamB, read_perms),
                 (server.default_role, no_perms),
                 (server.me, read_perms),
-                (mod_role, read_perms),
                 (ref_role, read_perms))
 
             print('Created channel "<{channel}>"'\
@@ -208,12 +223,14 @@ class RoleKeeper:
             print('Reusing existing channel "<{channel}>"'\
                   .format(channel=channel.name))
 
+        maps = self.config['maps']
+
         if is_bo3:
             match = MatchBo3(teamA, teamB, maps)
             template = welcome_message_bo3
         else:
             match = Match(teamA, teamB, maps)
-            template = welcome_message_normal
+            template = welcome_message_bo1
 
         self.matches[channel_name] = match
         handle = Handle(self, None, channel)
@@ -235,8 +252,7 @@ class RoleKeeper:
 
     # Ban a map
     async def ban_map(self, member, channel, map_unsafe, force=False):
-        unsafe_chars = re.compile(r'[^a-zA-Z0-9]')
-        banned_map_safe = unsafe_chars.sub('', map_unsafe.lower())
+        banned_map_safe = sanitize_input(translit_input(map_unsafe))
 
         if channel.name not in self.matches:
             return
@@ -246,8 +262,7 @@ class RoleKeeper:
 
     # Pick a map
     async def pick_map(self, member, channel, map_unsafe, force=False):
-        unsafe_chars = re.compile(r'[^a-zA-Z0-9]')
-        picked_map_safe = unsafe_chars.sub('', map_unsafe.lower())
+        picked_map_safe = sanitize_input(translit_input(map_unsafe))
 
         if channel.name not in self.matches:
             return
@@ -257,8 +272,7 @@ class RoleKeeper:
 
     # Choose sides
     async def choose_side(self, member, channel, side_unsafe, force=False):
-        unsafe_chars = re.compile(r'[^a-zA-Z0-9]')
-        side_safe = unsafe_chars.sub('', side_unsafe.lower())
+        side_safe = sanitize_input(translit_input(side_unsafe))
 
         if channel.name not in self.matches:
             return
@@ -272,13 +286,16 @@ class Handle:
         self.member = member
         self.channel = channel
 
+        self.team = None
+
         if member:
-            self.team = next(role for role in member.roles if role.name.endswith(' team'))
-        else:
-            self.team = None
+            try:
+                self.team = next(role for role in member.roles if role.name.endswith(' team'))
+            except StopIteration:
+                pass
 
     async def reply(self, msg):
-        await self.bot.client.send_message(self.channel, '{} {}'.format(self.member.mention, msg))
+        await self.send('{} {}'.format(self.member.mention, msg))
 
     async def send(self, msg):
         await self.bot.client.send_message(self.channel, msg)

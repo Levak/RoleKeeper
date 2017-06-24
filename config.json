@@ -1,0 +1,16 @@
+{
+    "app_bot_token": "--redacted--",
+
+    "team_captain_file" : {
+        "June Fast Cup": "members.csv",
+    },
+
+    "maps": [ "Yard", "D-17", "Factory", "District", "Destination", "Palace", "Pyramid" ],
+
+    "roles": {
+        "referee": "Referees",
+        "captain": "Team Captains",
+        "streamer": "Streamers",
+        "group": "Group {}"
+    }
+}

@@ -1,6 +1,7 @@
 import asyncio
 
 from difflib import SequenceMatcher
+from inputs import sanitize_input, translit_input
 
 class Match:
     def __init__(self, teamA, teamB, maps):
@@ -17,7 +18,7 @@ class Match:
                           (teamA, 'ban'), (teamB, 'ban'),
                           (teamB, 'side') ]
 
-        self.sides = { 'defends': [ 'defend', 'defence', 'warface', 'def', 'd' ],
+        self.sides = { 'defends': [ 'defend', 'defense', 'defence', 'warface', 'def', 'd' ],
                        'attacks' : [ 'attack', 'blackwood', 'att', 'a' ] }
 
     def is_in_match(self, member):
@@ -26,7 +27,10 @@ class Match:
     def find_map(self, map_name):
         try:
             return next(m for m in self.maps \
-                        if SequenceMatcher(None, m.lower(), map_name.lower()).ratio() > 0.8)
+                        if SequenceMatcher(None,
+                                           sanitize_input(translit_input(m)),
+                                           sanitize_input(translit_input(map_name))
+                                       ).ratio() > 0.8)
         except StopIteration:
             return None
 
@@ -56,6 +60,14 @@ class Match:
             await handle.reply("That map is not in the map poll, or I didn't understand you")
             return False
 
+        if map_id in self.banned_maps:
+            await handle.reply("That map has already been banned, please choose another one")
+            return False
+
+        if map_id in self.picked_maps:
+            await handle.reply("That map has already been picked, please choose another one")
+            return False
+
         return True
 
     async def ban_map(self, handle, banned_map, force=False):
@@ -64,12 +76,11 @@ class Match:
         if not await self.check('ban', handle, banned_map_id, force):
             return
 
-        if banned_map_id in self.banned_maps:
-            await handle.reply("That map has already been banned, please choose another one")
-            return
-
         self.banned_maps.append(banned_map_id)
-        print('Banned map {}'.format(banned_map_id))
+        print('{ch}: {team} banned map {map}'\
+              .format(ch=handle.channel,
+                      team=handle.team,
+                      map=banned_map_id))
         await self.update_turn(handle)
 
     async def pick_map(self, handle, picked_map, force=False):
@@ -78,12 +89,11 @@ class Match:
         if not await self.check('pick', handle, picked_map_id, force):
             return
 
-        if picked_map_id in self.picked_maps:
-            await handle.reply("That map has already been picked, please choose another one")
-            return
-
         self.picked_maps.append(picked_map_id)
-        print('Picked map {}'.format(picked_map_id))
+        print('{ch}: {team} picked map {map}'\
+              .format(ch=handle.channel,
+                      team=handle.team,
+                      map=picked_map_id))
         await self.update_turn(handle)
 
     async def choose_side(self, handle, chosen_side, force=False):
@@ -96,6 +106,10 @@ class Match:
             return
 
         self.chosen_side = side_id
+        print('{ch}: {team} chose side {side}'\
+              .format(ch=handle.channel,
+                      team=handle.team,
+                      side=side_id))
         await self.update_turn(handle)
 
     async def update_turn(self, handle):
@@ -105,7 +119,7 @@ class Match:
             await self.summary(handle)
 
     async def status(self, handle):
-        msg = '\n'.join([' - {:<15} {:>6}'.format(m, '[ban]' if m in self.banned_maps else '[pick]' if m in self.picked_maps else '') for m in self.maps ])
+        msg = '\n'.join([' - {:<15} {:>6}'.format(m, '[ban]' if m in self.banned_maps else '[pick]' if m in self.picked_maps else '~  ') for m in self.maps ])
         if self.turn >= len(self.sequence):
             turn = ''
         else:

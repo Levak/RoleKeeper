@@ -1,9 +1,15 @@
 #! /usr/bin/env python3
 import discord
 import asyncio
-import config
 
 from rolekeeper import RoleKeeper
+
+import json
+
+def get_config(path):
+    with open(path, 'r') as f:
+        config = json.load(f)
+    return config
 
 client = discord.Client()
 
@@ -63,5 +69,6 @@ async def on_message(message):
         channel = discord.utils.get(message.author.server.channels, id=channel_id)
         await rk.client.send_message(channel, msg)
 
-rk = RoleKeeper(client, 'members.csv')
-client.run(config.token)
+config = get_config('config.json')
+rk = RoleKeeper(client, config)
+client.run(config['app_bot_token'])
