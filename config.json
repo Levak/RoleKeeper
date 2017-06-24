@@ -14,6 +14,7 @@
     "servers": {
         "June Fast Cup": {
             "captains": "members.csv",
+            "maps": [ "Yard", "D-17", "Factory", "District", "Destination", "Palace", "Pyramid" ],
             "rooms": {
                 "match_created": [ "jfc_streamers" ],
                 "match_starting": [ "bot_referees", "jfc_streamers" ]

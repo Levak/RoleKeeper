@@ -169,8 +169,6 @@ Here is an example of configuration file:
 {
     "app_bot_token": "--redacted--",
 
-    "maps": [ "Yard", "D-17", "Factory", "District", "Destination", "Palace", "Pyramid" ],
-
     "roles": {
         "referee": "Referees",
         "captain": "Team Captains",
@@ -181,6 +179,7 @@ Here is an example of configuration file:
     "servers": {
         "June Fast Cup": {
             "captains": "members.csv",
+            "maps": [ "Yard", "D-17", "Factory", "District", "Destination", "Palace", "Pyramid" ],
             "rooms": {
                 "match_created": [ "jfc_streamers" ],
                 "match_starting": [ "bot_referees", "jfc_streamers" ]
@@ -189,6 +188,7 @@ Here is an example of configuration file:
 
         "JFCtest": {
             "captains": "members_test.csv",
+            "maps": [ "Lorem", "Ipsum", "Dolor", "Sit", "Amet", "Consectetur", "Adipiscing" ],
             "rooms": {
                 "match_created": [ "streamers" ],
                 "match_starting": [ "referees", "streamers" ]
@@ -204,11 +204,6 @@ Here is an example of configuration file:
 [Discord application page](https://discordapp.com/developers/applications/me#top),
 click on your application, then create a bot for the application and expand
 the _APP BOT TOKEN_.
-
-### `maps`
-
-**List of String**. All the available maps for the pick & ban sequences. Must
-  contain 7 elements.
 
 ### `roles/referee`
 
@@ -230,6 +225,11 @@ the _APP BOT TOKEN_.
 ### `servers/.../captains`
 
 **String**. Path to the member list file for that server.
+
+### `servers/.../maps`
+
+**List of String**. All the available maps for the pick & ban sequences for
+  that server. Must contain exactly 7 elements.
 
 ### `servers/.../rooms/match_created`
 

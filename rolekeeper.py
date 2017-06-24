@@ -223,7 +223,7 @@ class RoleKeeper:
             print('Reusing existing channel "<{channel}>"'\
                   .format(channel=channel.name))
 
-        maps = self.config['maps']
+        maps = self.config['servers'][server.name]['maps']
 
         if is_bo3:
             match = MatchBo3(teamA, teamB, maps)
