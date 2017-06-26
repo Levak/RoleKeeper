@@ -253,10 +253,18 @@ The filename and location is not enforced and can be changed in the
 
 **config.json**
 ```
-    "team_captain_file" : {
-        "June Fast Cup": "members.csv",
-        "JFCtest": "members_test.csv"
+...
+    "servers" : {
+        "June Fast Cup": {
+            "captains": "members.csv",
+            ...
+        },
+        "JFCtest": {
+            "captains": "members_test.csv",
+            ...
+        }
     },
+...
 ```
 
 The `members.csv` file has to be in the following format (comma separated
@@ -307,6 +315,7 @@ processed and will have to be handled manually by a referee.
 - [x] Forward pick & ban results in a room for a new `Streamer` role
 - [x] Add `!stream` command for a new `Streamer` role to notify matches are streamed
 - [x] Handle unicode team names in order to create valid Discord chat channel names.
+- [ ] Add `!create_roles` for admin to create all channels and required roles (first time install).
 - [ ] (idea) Import `members.csv` directly from esports website
 - [ ] (idea) Automatically launch `!bo1`/`!bo3` based on info from esports website
 - [ ] (idea) Handle match result gathering (with vote from both teams)
