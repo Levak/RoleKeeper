@@ -5,9 +5,12 @@ Discord bot for Warface Tournaments
 ## About
 
 RoleKeeper is a bot specificly designed to handle Warface Discord tournament
-servers.  It auto-assigns roles of team captains based on an CSV file
-(exported from esports site).  From there, it also features the creation of
-chat channels used for guided pick & ban sequence.
+servers. Its main features are:
+ - Auto-assignment of team captain roles based on an CSV file
+   (exported from esports site);
+ - Creation of chat channels used for guided pick & ban sequence;
+ - Broadcast of events from and to match chat channels (match room
+   created, streamed match, pick&ban results). 
 
 It was successfuly used in the
 [June Fast Cup](https://esports.my.com/tournament/5/bracket/) (JFC) with over
@@ -25,7 +28,7 @@ followed by the command name, a space and then the command arguments.
 
 ### Team captains commands
 
-A team captain is a member with the role `Team Captains`.
+A Team captain is a member with the role `roles/captain` defined in `config.json`
 
  - `!ban map`, bans map `map` from the map list available in the pick & ban
    sequence. `map` is case-insensitively matched at 80% with available maps;
@@ -38,18 +41,22 @@ A team captain is a member with the role `Team Captains`.
 
 ### Referees commands
 
-A judge referee is a member with the `roles/referee` defined in `config.json`
+A judge referee is a member with the role `roles/referee` defined in `config.json`
 
  - `!say #channel message...`, makes bot say `message...` in `channel`. Note
    that `channel` has to be a valid chat-channel mention;
  - `!bo1 @teamA @teamB` (Both arguments have to be **existing** Discord role
    mentions);
    1. Creates a chat room named `match_teamA_vs_teamB`;
-   2. Gives permissions to `teamA` and `teamB` roles to see the chat room;
-   3. Starts a best-of-1 map pick & ban sequence;
-   4. Team captains are invited to type `!ban map`, `!pick map` or `!side
+   2. Broadcast the fact the channel was created in rooms
+      `servers/.../rooms/match_created` defined in `config.json`;
+   3. Gives permissions to `teamA` and `teamB` roles to see the chat room;
+   4. Starts a best-of-1 map pick & ban sequence;
+   5. Team captains are invited to type `!ban map`, `!pick map` or `!side
       side` one after the other;
-   5. Prints the summary of elected maps and sides;
+   6. Prints the summary of elected maps and sides;
+   7. Broadcast the results in rooms `servers/.../rooms/match_starting`
+      defined in `config.json`.
  - `!bo3 @teamA @teamB`, same as `!bo1` excepts it creates a best-of-3 chat
    channel;
  - `!ban`, `!pick` and `!side` commands (see [Team captains](#team-captains))
@@ -58,10 +65,10 @@ A judge referee is a member with the `roles/referee` defined in `config.json`
 
 ### Streamers commands
 
-A streamer is a member with the `roles/streamer` defined in `config.json`
+A streamer is a member with the role `roles/streamer` defined in `config.json`
 
- - `!stream match_id`, will broadcast the information that `match_id` is
-   streamed by the one executing the command. The bot will provide `match_id`
+ - `!stream match_id`, will broadcast the information that `match_id` will be
+   streamed by the one executing the command. Rolekeeper provides `match_id`
    to channels `servers/[server]/rooms/match_created` which streamers should
    have access to.
 
@@ -72,9 +79,9 @@ access to the `config.json` file and bot launch.
 
  - `!refresh`, will crawl the server member list again to find members without
    any role and assign one if a team captain is found;
- - `!create_teams`, based on `members.csv`, create all the team roles in
+ - `!create_teams`, based on `members.csv`, creates all the team roles in
    advance (optional). This can be helpful when `members.csv` is incomplete
-   and contains invalid Discord ID, but the teams are, allowing manual
+   and contains invalid Discord ID while teams are correct, allowing manual
    role-assigning by a referee.
 
 ## How to install
@@ -248,8 +255,8 @@ captains Discord ID, team name, group and IGN. Based on this file, the bot is
 able to rename, create the team role, and assign it to the team captain
 whenever he joins the Discord server.
 
-The filename and location is not enforced and can be changed in the
-`config.json` file. It is a per-server configuration:
+The filename and location for `member.csv` are not enforced and can be changed
+in the `config.json` file. It is a per-server configuration:
 
 **config.json**
 ```
@@ -268,7 +275,7 @@ The filename and location is not enforced and can be changed in the
 ```
 
 The `members.csv` file has to be in the following format (comma separated
-values, # for comments):
+values, `#` for comments):
 
 **members.csv**
 ```
@@ -300,8 +307,8 @@ processed and will have to be handled manually by a referee.
   and only one group, until the brackets merge. At this point, some referees
   lose the responsability of their group.  It is recommanded to create chat
   channels like `#group_a` where members with role `Group A` are able to
-  read/send messages.  When the groups merge, the team captains have to be
-  manually assigned their new group role (by referee).
+  read/send messages. When the groups merge, referees can manually assign
+  the new group role to the affected team captains.
 
 ## TODO
 
@@ -315,7 +322,7 @@ processed and will have to be handled manually by a referee.
 - [x] Forward pick & ban results in a room for a new `Streamer` role
 - [x] Add `!stream` command for a new `Streamer` role to notify matches are streamed
 - [x] Handle unicode team names in order to create valid Discord chat channel names.
-- [ ] Add `!create_roles` for admin to create all channels and required roles (first time install).
+- [ ] Add `!setup` for admin to create all channels and required roles (first time install).
 - [ ] (idea) Import `members.csv` directly from esports website
 - [ ] (idea) Automatically launch `!bo1`/`!bo3` based on info from esports website
 - [ ] (idea) Handle match result gathering (with vote from both teams)
