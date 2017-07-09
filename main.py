@@ -23,15 +23,25 @@
 
 import discord
 import asyncio
+import sys
 
 from rolekeeper import RoleKeeper
 
 import json
 
 def get_config(path):
-    with open(path, 'r') as f:
-        config = json.load(f)
-    return config
+    try:
+        with open(path, 'r') as f:
+            config = json.load(f)
+        return config
+    except FileNotFoundError as e:
+        print('ERROR while loading config.\n{}: "{}"'\
+              .format(e.strerror, e.filename))
+        return None
+    except Exception as e:
+        print('ERROR while loading config.\n{}: line {} col {}'\
+              .format(e.msg, e.lineno, e.colno))
+        return None
 
 client = discord.Client()
 
@@ -116,6 +126,16 @@ async def on_message(message):
     elif command == '!stream' and is_streamer:
         await rk.stream_match(message, args.split()[0])
 
-config = get_config('config.json')
-rk = RoleKeeper(client, config)
-client.run(config['app_bot_token'])
+if __name__ == '__main__':
+
+    config = None
+
+    if len(sys.argv) > 1:
+        config = get_config(sys.argv[1])
+    else:
+        print('Using default configuration file path: `config.json`')
+        config = get_config('config.json')
+
+    if config:
+        rk = RoleKeeper(client, config)
+        client.run(config['app_bot_token'])

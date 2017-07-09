@@ -10,7 +10,7 @@ servers. Its main features are:
    (exported from esports site);
  - Creation of chat channels used for guided pick & ban sequence;
  - Broadcast of events from and to match chat channels (match room
-   created, streamed match, pick&ban results). 
+   created, streamed match, pick&ban results).
 
 It was successfuly used in the
 [June Fast Cup](https://esports.my.com/tournament/5/bracket/) (JFC) with over
@@ -83,6 +83,24 @@ access to the `config.json` file and bot launch.
    advance (optional). This can be helpful when `members.csv` is incomplete
    and contains invalid Discord ID while teams are correct, allowing manual
    role-assigning by a referee.
+
+## Usage
+
+Rolekeeper requires Python >=3.4. Entrypoint is `main.py`, which takes an
+optional 1st argument, the configuration file. By default, no argument given
+means Rolekeeper will look for the file `config.json`.
+
+Example:
+```
+~/rolekeeper/$ ./main.py config_mr.py
+```
+
+or:
+```
+~/rolekeeper/$ ./main.py
+Using default configuration file path: `config.json`
+...
+```
 
 ## How to install
 
@@ -316,13 +334,15 @@ processed and will have to be handled manually by a referee.
   captains at the _last-minute_
 - [x] Cross-server non-interference (When the bot is invited in several
   Discord servers, it will run on the same member list)
-- [ ] Take `config.json` as parameter
+- [x] Take `config.json` as parameter
 - [x] Configurable role names and list
 - [x] Configurable map list
 - [x] Forward pick & ban results in a room for a new `Streamer` role
 - [x] Add `!stream` command for a new `Streamer` role to notify matches are streamed
 - [x] Handle unicode team names in order to create valid Discord chat channel names.
 - [ ] Add `!setup` for admin to create all channels and required roles (first time install).
+- [ ] Add `!wipe_match_rooms` for admin to remove all match chat rooms.
+- [ ] Add `!wipe_team_roles` for admin to remove all team captain roles.
 - [ ] (idea) Import `members.csv` directly from esports website
 - [ ] (idea) Automatically launch `!bo1`/`!bo3` based on info from esports website
 - [ ] (idea) Handle match result gathering (with vote from both teams)
