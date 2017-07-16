@@ -64,6 +64,9 @@ async def on_message(message):
     is_captain_in_match = rk.is_captain_in_match(message.author, message.channel) or is_admin or is_ref
     is_streamer = discord.utils.get(message.author.roles, name=rk.config['roles']['streamer']) or is_admin
 
+    if len(message.content) <= 0:
+        return
+
     command = message.content.split()[0]
     args = message.content.replace(command, '', 1).strip()
 
@@ -71,6 +74,15 @@ async def on_message(message):
         await rk.refresh(message.author.server)
     elif command == '!create_teams' and is_admin:
         await rk.create_all_roles(message.author.server)
+
+    elif command == '!wipe_teams' and is_admin:
+        await rk.wipe_teams(message.author.server)
+
+    elif command == '!wipe_matches' and is_admin:
+        await rk.wipe_matches(message.author.server)
+
+    elif command == '!announce' and is_admin:
+        await rk.announce(args, message)
 
     elif command == '!bo1' and is_admin:
         if len(message.role_mentions) == 2:

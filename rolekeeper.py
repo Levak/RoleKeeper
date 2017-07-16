@@ -108,6 +108,9 @@ class RoleKeeper:
             await self.refresh(server)
 
     async def on_member_join(self, member):
+        if member.server.name not in self.config['servers']:
+            return
+
         await self.handle_member_join(member)
 
     def cache_role(self, server, ref):
@@ -121,6 +124,10 @@ class RoleKeeper:
     # 2. Refill group cache
     # 3. Visit all members with no role
     async def refresh(self, server):
+        if server.name not in self.config['servers']:
+            print ('WARNING: Server "{}" not configured!'.format(server.name))
+            return
+
         self.groups[server] = {}
 
         # Reparse team captain file
@@ -164,7 +171,7 @@ class RoleKeeper:
     # 3. Assign the global group to that Team captain
     # 4. Change nickname of Team captain
     async def handle_member_join(self, member):
-        discord_id = '{}#{}'.format(member.name, member.discriminator)
+        discord_id = str(member)
         server = member.server
 
         if discord_id not in self.captains[server]:
@@ -311,7 +318,84 @@ class RoleKeeper:
                 .format(member.nick if member.nick else member.name))
             await self.reply(message, 'roger!')
         else:
-            await self.repy(message, 'This match does not exist!')
+            await self.reply(message, 'This match does not exist!')
+
+
+    # Remove all teams
+    # 1. Delete all existing team roles
+    # 2. Find all members with role team captain
+    # 3. Remove group role from member
+    # 4. Remove team captain role from member
+    # 5. Reset member nickname
+    async def wipe_teams(self, server):
+        captain_role = self.groups[server]['captain']
+
+        # 1. Delete all existing team roles
+        for role in server.roles:
+            if role.name.endswith(' team'):
+                await self.client.delete_role(server, role)
+                print ('Deleted role "{role}"'\
+                       .format(role=role.name))
+
+        # 2. Find all members with role team captain
+        for member in server.members:
+            member_name = str(member)
+
+            if captain_role in member.roles:
+
+                print ('Found member "{member}" with role "{role}"'\
+                       .format(member=member_name,
+                               role=captain_role.name))
+
+                # 3. Remove group role from member
+                group_role = None
+                discord_id = member_name
+                if discord_id in self.captains[server]:
+                    for role in member.roles:
+                        if role.name.startswith('Group '): # TODO, use or remove /group
+                            group_role = role
+                            break
+
+                    #captain = self.captains[server][discord_id]
+                    #group_role = self.groups[server][captain.group]
+                    del self.captains[server][discord_id]
+
+                crole_name = captain_role.name
+                grole_name = group_role.name if group_role else '<no group>'
+
+                # 4. Remove team captain role from member
+                try:
+                    await self.client.remove_roles(member, captain_role, group_role)
+                    print ('Remove roles "{crole}" and "{grole}" from "{member}"'\
+                           .format(member=member_name,
+                                   crole=crole_name,
+                                   grole=grole_name))
+                except:
+                    pass
+
+                # 5. Reset member nickname
+                try:
+                    await self.client.change_nickname(member, None)
+                    print ('Reset nickname for "{member}"'\
+                           .format(member=member_name))
+                except:
+                    pass
+
+    # Remove all match rooms
+    # 1. Find all channels matching match_* pattern
+    # 2. Delete channel
+    async def wipe_matches(self, server):
+        channels_to_delete = [ ch for ch  in server.channels if ch.name.startswith('match_') ]
+        for channel in channels_to_delete:
+                await self.client.delete_channel(channel)
+                print ('Deleted channel "{channel}"'\
+                       .format(channel=channel.name))
+
+    # Announcement message
+    async def announce(self, msg, message):
+        handle = Handle(self, message.author, message.channel)
+        await handle.broadcast('announcement', msg)
+
 
 
 class Handle:
@@ -345,6 +429,10 @@ class Handle:
         for channel_name in channels:
             channel = discord.utils.get(self.channel.server.channels, name=channel_name)
             if channel:
-                await self.bot.client.send_message(channel, msg)
+                try:
+                    await self.bot.client.send_message(channel, msg)
+                except:
+                    print('WARNING: No permission to write in "{}"'.format(channel_name))
+                    pass
             else:
                 print ('WARNING: Missing channel {}'.format(channel_name))

@@ -19,6 +19,15 @@
                 "match_created": [ "jfc_streamers" ],
                 "match_starting": [ "bot_referees", "jfc_streamers" ]
             }
+        },
+        "WFesports": {
+            "captains": "members_usc.csv",
+            "maps": [ "Yard", "D-17", "Factory", "District", "Destination", "Palace", "Pyramid" ],
+            "rooms": {
+                "match_created": [ "streamers" ],
+                "match_starting": [ "int_results", "streamers" ],
+                "announcement": [ "support", "group_a", "group_b", "group_c", "group_d", "group_e", "general" ]
+            }
         }
     }
 }

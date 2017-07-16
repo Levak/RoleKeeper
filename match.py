@@ -40,7 +40,7 @@ class Match:
                           (teamB, 'side') ]
 
         self.sides = { 'defends': [ 'defend', 'defense', 'defence', 'warface', 'def', 'd' ],
-                       'attacks' : [ 'attack', 'blackwood', 'att', 'a' ] }
+                       'attacks' : [ 'attack', 'attacking', 'blackwood', 'offense', 'att', 'a' ] }
 
     def is_in_match(self, member):
         return self.teamA in member.roles or self.teamB in member.roles
