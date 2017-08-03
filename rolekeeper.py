@@ -107,6 +107,18 @@ class RoleKeeper:
             print('Server: {}'.format(server))
             await self.refresh(server)
 
+    async def on_dm(self, message):
+        # If it is us sending the DM, exit
+        if message.author == self.client.user:
+            return
+
+        # Apologize
+        print('PM from {}: {}'.format(message.author, message.content))
+        await self.reply(message,
+                       ''':wave: Hello there!
+                       I am sorry, I cannot answer your question, I am just a bot!
+                       Feel free to ask a referee or admin instead :robot:''')
+
     async def on_member_join(self, member):
         if member.server.name not in self.config['servers']:
             return
@@ -210,7 +222,7 @@ class RoleKeeper:
 
     # Reply to a message in a channel
     async def reply(self, message, reply):
-        await self.client.send_message(
+        return await self.client.send_message(
             message.channel,
             '{} {}'.format(message.author.mention, reply))
 
@@ -309,14 +321,24 @@ class RoleKeeper:
         await self.matches[channel.name].choose_side(handle, side_safe, force)
 
     # Broadcast information that the match is or will be streamed
+    # 1. Notify captains match will be streamed
     async def stream_match(self, message, match_id):
         member = message.author
         channel = discord.utils.get(member.server.channels, name=match_id)
+
+        # If we found a channel with the given name
         if channel:
+
+            # 1. Notify captains match will be streamed
             await self.client.send_message(
-                channel, ':eye::popcorn: _**{}** will stream this match!_ :movie_camera::satellite:'\
+                channel, ':eye::popcorn: _**{}** will stream this match!_ :movie_camera::satellite:\n'
+                ':arrow_forward: _8.6 Teams participating in a streamed match get an additional 10 minutes to prepare; the time of the match may change per the decision of the Staff/Organizers._\n'\
                 .format(member.nick if member.nick else member.name))
             await self.reply(message, 'roger!')
+
+            print('Notified "{channel}" the match will be streamed by "{member}"'\
+                  .format(channel=channel.name,
+                          member=str(member)))
         else:
             await self.reply(message, 'This match does not exist!')
 
@@ -391,6 +413,35 @@ class RoleKeeper:
                 print ('Deleted channel "{channel}"'\
                        .format(channel=channel.name))
 
+    # Remove all messages that are not pinned in a given channel
+    async def wipe_messages(self, message, channel):
+        count = 0
+        try:
+            messages_to_delete = [
+                msg async for msg in self.client.logs_from(channel) if not msg.pinned ]
+            count = len(messages_to_delete)
+        except:
+            print('WARNING: No permission to read logs from "{}"'.format(channel.name))
+            return
+
+        reply = await self.reply(message,
+                                 'Clearing {count} message(s)... (this might take a while)'\
+                                 .format(count=count))
+
+        for msg in messages_to_delete:
+            try:
+                await self.client.delete_message(msg)
+            except:
+                count = count - 1
+                print('WARNING: No permission to delete in "{}"'.format(channel.name))
+                pass
+
+        await self.client.edit_message(reply, '{mention} Deleted {count} messages.'\
+                                       .format(mention=message.author.mention,
+                                               count=count))
+        print ('Deleted {count} messages in "{channel}"'\
+               .format(count=count, channel=channel.name))
+
     # Announcement message
     async def announce(self, msg, message):
         handle = Handle(self, message.author, message.channel)
@@ -413,10 +464,15 @@ class Handle:
                 pass
 
     async def reply(self, msg):
-        await self.send('{} {}'.format(self.member.mention, msg))
+        return await self.send('{} {}'.format(self.member.mention, msg))
 
     async def send(self, msg):
-        await self.bot.client.send_message(self.channel, msg)
+        try:
+            return await self.bot.client.send_message(self.channel, msg)
+        except discord.errors.HTTPException as e:
+            print('WARNING: HTTPexception: {}'.format(str(e)))
+            await asyncio.sleep(10)
+            return await self.send(msg)
 
     async def broadcast(self, bcast_id, msg):
         channels = []

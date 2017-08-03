@@ -82,7 +82,12 @@ access to the `config.json` file and bot launch.
  - `!create_teams`, based on `members.csv`, creates all the team roles in
    advance (optional). This can be helpful when `members.csv` is incomplete
    and contains invalid Discord ID while teams are correct, allowing manual
-   role-assigning by a referee.
+   role-assigning by a referee;
+ - `!wipe_captains`, will delete all team-captain roles and remove team
+   captain and group role from every member;
+ - `!wipe_matches`, will remove all channels starting with `match_`;
+ - `!wipe_messages #channel`, will remove all non-pinned messages in
+   `channel`. Note that `channel` has to be a valid chat-channel mention.
 
 ## Usage
 
@@ -341,8 +346,8 @@ processed and will have to be handled manually by a referee.
 - [x] Add `!stream` command for a new `Streamer` role to notify matches are streamed
 - [x] Handle unicode team names in order to create valid Discord chat channel names.
 - [ ] Add `!setup` for admin to create all channels and required roles (first time install).
-- [ ] Add `!wipe_match_rooms` for admin to remove all match chat rooms.
-- [ ] Add `!wipe_team_roles` for admin to remove all team captain roles.
+- [x] Add `!wipe_match_rooms` for admin to remove all match chat rooms.
+- [x] Add `!wipe_team_roles` for admin to remove all team captain roles.
 - [ ] (idea) Import `members.csv` directly from esports website
 - [ ] (idea) Automatically launch `!bo1`/`!bo3` based on info from esports website
 - [ ] (idea) Handle match result gathering (with vote from both teams)

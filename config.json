@@ -1,9 +1,6 @@
 {
     "app_bot_token": "--redacted--",
 
-
-    "maps": [ "Yard", "D-17", "Factory", "District", "Destination", "Palace", "Pyramid" ],
-
     "roles": {
         "referee": "Referees",
         "captain": "Team Captains",

@@ -59,6 +59,11 @@ async def on_member_join(member):
 
 @client.event
 async def on_message(message):
+    # If message is a DM
+    if type(message.author) is discord.User:
+        await rk.on_dm(message)
+        return
+
     is_admin = message.author.server_permissions.manage_roles
     is_ref = discord.utils.get(message.author.roles, name=rk.config['roles']['referee']) or is_admin
     is_captain_in_match = rk.is_captain_in_match(message.author, message.channel) or is_admin or is_ref
@@ -80,6 +85,13 @@ async def on_message(message):
 
     elif command == '!wipe_matches' and is_admin:
         await rk.wipe_matches(message.author.server)
+
+    elif command == '!wipe_messages' and is_admin:
+        if len(message.channel_mentions) < 1:
+            await rk.reply(message,
+                           'Not enough arguments:\n```!wipe_messages #channel```')
+        else:
+            await rk.wipe_messages(message, message.channel_mentions[0])
 
     elif command == '!announce' and is_admin:
         await rk.announce(args, message)
@@ -105,11 +117,22 @@ async def on_message(message):
                            'Too much or not enough arguments:\n```!bo3 @xxx @yyy```')
 
     elif command == '!pick' and is_captain_in_match:
-        await rk.pick_map(message.author, message.channel, args.split()[0], force=is_ref)
+        await rk.pick_map(message.author,
+                          message.channel,
+                          args.split()[0] if len(args) > 0 else '',
+                          force=is_ref)
+
     elif command == '!ban' and is_captain_in_match:
-        await rk.ban_map(message.author, message.channel, args.split()[0], force=is_ref)
-    elif command == '!side' and is_captain_in_match:
-        await rk.choose_side(message.author, message.channel, args.split()[0], force=is_ref)
+        await rk.ban_map(message.author,
+                         message.channel,
+                         args.split()[0] if len(args) > 0 else '',
+                         force=is_ref)
+
+    elif command == '!side'  and is_captain_in_match:
+        await rk.choose_side(message.author,
+                             message.channel,
+                             args.split()[0] if len(args) > 0 else '',
+                             force=is_ref)
 
     elif command == '!say' and is_ref:
         parts = args.split()
@@ -136,7 +159,8 @@ async def on_message(message):
                                'No channel named `#{}`'.format(channel_id))
 
     elif command == '!stream' and is_streamer:
-        await rk.stream_match(message, args.split()[0])
+        await rk.stream_match(message,
+                              args.split()[0] if len(args) > 0 else '')
 
 if __name__ == '__main__':
 
