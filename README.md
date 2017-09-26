@@ -83,7 +83,7 @@ access to the `config.json` file and bot launch.
    advance (optional). This can be helpful when `members.csv` is incomplete
    and contains invalid Discord ID while teams are correct, allowing manual
    role-assigning by a referee;
- - `!wipe_captains`, will delete all team-captain roles and remove team
+ - `!wipe_teams`, will delete all team-captain roles and remove team
    captain and group role from every member;
  - `!wipe_matches`, will remove all channels starting with `match_`;
  - `!wipe_messages #channel`, will remove all non-pinned messages in
@@ -91,7 +91,7 @@ access to the `config.json` file and bot launch.
 
 ## Usage
 
-Rolekeeper requires Python >=3.4. Entrypoint is `main.py`, which takes an
+Rolekeeper requires Python >=3.6. Entrypoint is `main.py`, which takes an
 optional 1st argument, the configuration file. By default, no argument given
 means Rolekeeper will look for the file `config.json`.
 
@@ -109,8 +109,8 @@ Using default configuration file path: `config.json`
 
 ## How to install
 
-This project requires **Python >=3.4** as it uses extensively the Python
-[Discord API](https://github.com/Rapptz/discord.py).  It is recommended to run
+This project requires **Python >=3.6** as it uses extensively the Python
+[Discord API](https://github.com/Rapptz/discord.py). It is recommended to run
 it in a Python `virtualenv` and install dependencies with `pip`.
 
 1. Clone the project
@@ -349,5 +349,12 @@ processed and will have to be handled manually by a referee.
 - [x] Add `!wipe_match_rooms` for admin to remove all match chat rooms.
 - [x] Add `!wipe_team_roles` for admin to remove all team captain roles.
 - [ ] (idea) Import `members.csv` directly from esports website
-- [ ] (idea) Automatically launch `!bo1`/`!bo3` based on info from esports website
+- [ ] (idea) Automatically launch `!bo1`/`!bo3` based on info from esports
+  website
 - [ ] (idea) Handle match result gathering (with vote from both teams)
+- [ ] Add progress for long operations, e.g. `!refresh`, `!wipe_teams`,
+  `!wipe_matches`
+- [ ] Add CSV upload instead of static memberlist.
+- [ ] Support multiple cups at the same time, e.g. `!start_cup x` and
+  `!stop_cup x`
+- [ ] Regroup match chat rooms by categories (new Discord feature)

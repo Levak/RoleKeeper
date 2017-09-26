@@ -102,3 +102,5 @@ ENV/
 /members.csv
 /members_test.csv
 /members_usc.csv
+/members_jfc.csv
+/members_nacc.csv
