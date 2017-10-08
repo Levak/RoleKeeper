@@ -104,3 +104,6 @@ ENV/
 /members_usc.csv
 /members_jfc.csv
 /members_nacc.csv
+/db/
+/members-mycom.csv
+/CCI_caps.csv

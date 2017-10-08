@@ -1,10 +1,10 @@
 aiohttp==1.0.5
-async-timeout==1.2.1
-chardet==3.0.3
-discord.py==0.16.8
+async-timeout==1.4.0
+chardet==3.0.4
+discord.py==0.16.11
 lorem-ipsum-generator==0.3
-multidict==2.1.5
+multidict==3.2.0
 six==1.10.0
 transliterate==1.9
 urllib3==1.21.1
-websockets==3.3
+websockets==3.4

@@ -5,25 +5,32 @@
         "referee": "Referees",
         "captain": "Team Captains",
         "streamer": "Streamers",
-        "group": "Group {}"
+        "group": "Group {}",
+        "team": "{} team"
     },
 
     "servers": {
-        "June Fast Cup": {
-            "captains": "members.csv",
-            "maps": [ "Yard", "D-17", "Factory", "District", "Destination", "Palace", "Pyramid" ],
+        "RoleKeeperTestSuite": {
+            "db": "test",
+            "captains": "members_test.csv",
+            "maps": [ "Lorem", "Ipsum", "Dolor", "Sit", "Amet", "Consectetur", "Adipiscing" ],
             "rooms": {
-                "match_created": [ "jfc_streamers" ],
-                "match_starting": [ "bot_referees", "jfc_streamers" ]
+                "match_created": [ "streamers" ],
+                "match_starting": [ "referees", "streamers" ],
+                "announcement": [ "streamers", "referees", "general" ]
             }
         },
+
         "WFesports": {
-            "captains": "members_usc.csv",
-            "maps": [ "Yard", "D-17", "Factory", "District", "Destination", "Palace", "Pyramid" ],
+            "db": "mycom",
+            "captains": "members.csv",
+            "maps": [ "D-17", "Factory", "District", "Destination", "Bridges", "Palace", "Pyramid" ],
             "rooms": {
                 "match_created": [ "streamers" ],
                 "match_starting": [ "int_results", "streamers" ],
-                "announcement": [ "support", "group_a", "group_b", "group_c", "group_d", "group_e", "general" ]
+                "announcement": [ "esports_support", "general",
+                                  "group_a", "group_b", "group_c", "group_d", "group_e",
+                                  "esp_announcements" ]
             }
         }
     }

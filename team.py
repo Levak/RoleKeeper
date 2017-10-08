@@ -19,15 +19,25 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
+### Class that holds information about a team
+class Team:
+    def __init__(self, name, role):
+        self.name = name
+        self.role = role
+
+    def __str__(self):
+        return '{name} ({role})'\
+            .format(name=self.name, role=str(self.role))
+
 ### Class that holds information about a team captain
 class TeamCaptain:
-    def __init__(self, discord, team, nickname, group):
+    def __init__(self, discord, team_name, nickname, group):
         self.discord = discord
-        self.team = team
+        self.team_name = team_name
         self.nickname = nickname
         self.group = group
 
     def __str__(self):
         return '{nick} - {team} - Group {g} ({id})'\
-            .format(nick=self.nickname, team=self.team, id=self.discord, g=self.group)
+            .format(nick=self.nickname, team=self.team_name, id=self.discord, g=self.group)
 

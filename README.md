@@ -51,14 +51,20 @@ A judge referee is a member with the role `roles/referee` defined in `config.jso
    2. Broadcast the fact the channel was created in rooms
       `servers/.../rooms/match_created` defined in `config.json`;
    3. Gives permissions to `teamA` and `teamB` roles to see the chat room;
-   4. Starts a best-of-1 map pick & ban sequence;
+   4. Starts a best-of-1 map pick & ban sequence (6xban, pick, side);
    5. Team captains are invited to type `!ban map`, `!pick map` or `!side
       side` one after the other;
    6. Prints the summary of elected maps and sides;
    7. Broadcast the results in rooms `servers/.../rooms/match_starting`
       defined in `config.json`.
+ - `!bo2 @teamA @teamB`, same as `!bo1` excepts it creates a best-of-2 chat
+   channel (ban, ban, pick, pick, side);
  - `!bo3 @teamA @teamB`, same as `!bo1` excepts it creates a best-of-3 chat
-   channel;
+   channel (ban, ban, pick, pick, ban, ban, pick, side);
+ - `!add_captain @captain teamA nickname group`, add captain to the captain
+   database, assign the captain, team and group roles and rename the captain;
+ - `!remove_captain @captain`, remove a captain from the captain database,
+   reset its nickname, remove the assigned roles.
  - `!ban`, `!pick` and `!side` commands (see [Team captains](#team-captains))
    are available to referees so that they can test or bridge team captains
    choice if they are not in Discord server.
@@ -78,14 +84,17 @@ An admin is a member with Discord permission `manage roles`, someone that has
 access to the `config.json` file and bot launch.
 
  - `!refresh`, will crawl the server member list again to find members without
-   any role and assign one if a team captain is found;
- - `!create_teams`, based on `members.csv`, creates all the team roles in
-   advance (optional). This can be helpful when `members.csv` is incomplete
-   and contains invalid Discord ID while teams are correct, allowing manual
-   role-assigning by a referee;
- - `!wipe_teams`, will delete all team-captain roles and remove team
-   captain and group role from every member;
- - `!wipe_matches`, will remove all channels starting with `match_`;
+   any role and assign one if a team captain is found. **CAUTION**: Do not use
+   this command if someone already used `!add_captain` or `!remove_captain` as
+   it will reset captain database and forget about the new ones;
+ - `!create_teams`, [DEPRECATED] based on `members.csv`, creates all the team
+   roles in advance (optional). This can be helpful when `members.csv` is
+   incomplete and contains invalid Discord ID while teams are correct,
+   allowing manual role-assigning by a referee;
+ - `!export_members`, will generate a CSV of all members in the Discord server;
+ - `!wipe_teams`, will delete all team-captain roles known from captain
+   database, remove their captain and group roles, reset their nickname;
+ - `!wipe_matches`, will remove all match chat channels created;
  - `!wipe_messages #channel`, will remove all non-pinned messages in
    `channel`. Note that `channel` has to be a valid chat-channel mention.
 
@@ -154,7 +163,7 @@ $ source ./env/bin/activate
    from the bot app page)
 
 ```
-https://discordapp.com/oauth2/authorize?client_id=BOT_CLIENT_ID&scope=bot&permissions=402656272
+https://discordapp.com/oauth2/authorize?client_id=BOT_CLIENT_ID&scope=bot&permissions=402705488 
 ```
 
 This link should give the following permissions:
@@ -203,11 +212,13 @@ Here is an example of configuration file:
         "referee": "Referees",
         "captain": "Team Captains",
         "streamer": "Streamers",
-        "group": "Group {}"
+        "group": "Group {}",
+        "team": "{} team"
     },
 
     "servers": {
         "June Fast Cup": {
+            "db": "jfc",
             "captains": "members.csv",
             "maps": [ "Yard", "D-17", "Factory", "District", "Destination", "Palace", "Pyramid" ],
             "rooms": {
@@ -250,7 +261,16 @@ the _APP BOT TOKEN_.
 ### `roles/group`
 
 **String**. Template name used for the Team Groups. Use `{}` to indicate the
-  location where the actual group ID will be in the name.
+  location where the actual group ID will be in the role name.
+
+### `roles/team`
+
+**String**. Template name used for the Team names. Use `{}` to indicate the
+  location where the actual team name will be in the role name.
+
+### `servers/.../db`
+
+**String**. Name of the persistent storage DB on the disk (unique per server).
 
 ### `servers/.../captains`
 
@@ -357,4 +377,7 @@ processed and will have to be handled manually by a referee.
 - [ ] Add CSV upload instead of static memberlist.
 - [ ] Support multiple cups at the same time, e.g. `!start_cup x` and
   `!stop_cup x`
-- [ ] Regroup match chat rooms by categories (new Discord feature)
+- [ ] Regroup match chat rooms by categories (new Discord feature, requires
+  new discord.py)
+- [ ] Export pick/ban stats command, or on `!stop_cup`
+- [x] `!export_members` to export server member list
