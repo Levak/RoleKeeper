@@ -36,6 +36,7 @@ class TeamCaptain:
         self.team_name = team_name
         self.nickname = nickname
         self.group = group
+        self.team = None
 
     def __str__(self):
         return '{nick} - {team} - Group {g} ({id})'\

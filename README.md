@@ -91,7 +91,8 @@ access to the `config.json` file and bot launch.
    roles in advance (optional). This can be helpful when `members.csv` is
    incomplete and contains invalid Discord ID while teams are correct,
    allowing manual role-assigning by a referee;
- - `!export_members`, will generate a CSV of all members in the Discord server;
+ - `!members`, will generate a CSV of all members in the Discord server;
+ - `!stats`, will generate a CSV of pick&bans statistics;
  - `!wipe_teams`, will delete all team-captain roles known from captain
    database, remove their captain and group roles, reset their nickname;
  - `!wipe_matches`, will remove all match chat channels created;
@@ -379,5 +380,5 @@ processed and will have to be handled manually by a referee.
   `!stop_cup x`
 - [ ] Regroup match chat rooms by categories (new Discord feature, requires
   new discord.py)
-- [ ] Export pick/ban stats command, or on `!stop_cup`
+- [x] Export pick/ban stats command, or on `!stop_cup`
 - [x] `!export_members` to export server member list

@@ -42,8 +42,23 @@ class Match:
         self.sides = { 'defends': [ 'defends', 'defend', 'defense', 'defence', 'warface', 'def', 'd' ],
                        'attacks' : [ 'attacks', 'attack', 'attacking', 'blackwood', 'offense', 'att', 'a' ] }
 
+        self.status_handle = None
+        self.turn_handle = None
+        self.ended = False
+
+    ## Override pickle serialization
+    def __getstate__(self):
+        state = dict(self.__dict__)
+
+        # We cannot serialize Discord.Message because of WeakSet
+        # thus, remove them
+        state['status_handle'] = None
+        state['turn_handle'] = None
+
+        return state
+
     def is_in_match(self, member):
-        return self.teamA in member.roles or self.teamB in member.roles
+        return self.teamA.role in member.roles or self.teamB.role in member.roles
 
     def find_map(self, map_name):
         try:
@@ -55,8 +70,11 @@ class Match:
         except StopIteration:
             return None
 
+    def is_done(self):
+        return self.turn >= len(self.sequence)
+
     async def check(self, action, handle, map_id, force=False):
-        if self.turn >= len(self.sequence):
+        if self.is_done():
             await handle.reply("Pick & Ban sequence is over!")
             return False
 
@@ -94,8 +112,8 @@ class Match:
     async def begin(self, handle):
         await self.status(handle)
         await handle.broadcast('match_created', ':sparkle: Match created: `{match_id}`\n**{teamA}** vs **{teamB}**\n'\
-                               .format(teamA=self.teamA,
-                                       teamB=self.teamB,
+                               .format(teamA=self.teamA.name,
+                                       teamB=self.teamB.name,
                                        match_id=handle.channel.name))
 
 
@@ -103,27 +121,29 @@ class Match:
         banned_map_id = self.find_map(banned_map)
 
         if not await self.check('ban', handle, banned_map_id, force):
-            return
+            return False
 
         self.banned_maps.append(banned_map_id)
         print('{ch}: {team} banned map {map}'\
               .format(ch=handle.channel,
-                      team=handle.team,
+                      team=handle.team.name,
                       map=banned_map_id))
         await self.update_turn(handle)
+        return True
 
     async def pick_map(self, handle, picked_map, force=False):
         picked_map_id = self.find_map(picked_map)
 
         if not await self.check('pick', handle, picked_map_id, force):
-            return
+            return False
 
         self.picked_maps.append(picked_map_id)
         print('{ch}: {team} picked map {map}'\
               .format(ch=handle.channel,
-                      team=handle.team,
+                      team=handle.team.name,
                       map=picked_map_id))
         await self.update_turn(handle)
+        return True
 
     async def choose_side(self, handle, chosen_side, force=False):
         try:
@@ -132,14 +152,15 @@ class Match:
             side_id = None
 
         if not await self.check('side', handle, side_id, force):
-            return
+            return False
 
         self.chosen_side = side_id
         print('{ch}: {team} chose side {side}'\
               .format(ch=handle.channel,
-                      team=handle.team,
+                      team=handle.team.name,
                       side=side_id))
         await self.update_turn(handle)
+        return True
 
     async def update_turn(self, handle):
         self.turn += 1
@@ -149,30 +170,43 @@ class Match:
 
     async def status(self, handle):
         msg = '\n'.join([' - {:<15} {:>6}'.format(m, '[ban]' if m in self.banned_maps else '[pick]' if m in self.picked_maps else '~  ') for m in self.maps ])
-        if self.turn >= len(self.sequence):
-            turn = ''
-        else:
-            turn = 'Your turn {team}! Use `!{action} xxxxx`.'\
-                .format(team=self.sequence[self.turn][0].mention,
-                        action=self.sequence[self.turn][1])
 
-        await handle.send('Current sequence status ({i}/{n}):\n```\n{msg}\n```\n{turn}'\
+        if self.turn_handle:
+            await self.turn_handle.delete()
+            self.turn_handle = None
+
+        #await handle.react_ok()
+
+        msg = 'Current sequence status ({i}/{n}):\n```\n{msg}\n```'\
                           .format(i=self.turn,
                                   n=len(self.sequence),
-                                  msg=msg,
-                                  turn=turn))
+                                  msg=msg)
+
+        if not self.status_handle:
+            self.status_handle = handle.clone()
+            self.status_handle.message = await handle.send(msg)
+        else:
+            await self.status_handle.edit(msg)
+
+        if self.turn < len(self.sequence):
+            turn = 'Your turn {team}! Use `!{action} xxxxx`.'\
+                .format(team=self.sequence[self.turn][0].role.mention,
+                        action=self.sequence[self.turn][1])
+
+            self.turn_handle = handle.clone()
+            self.turn_handle.message = await handle.send(turn)
 
     async def summary(self, handle):
         map_id = next(e for e in self.maps if e not in self.banned_maps)
         await handle.send('Ban sequence finished!\n\nMap to play: **{map1}** ({teamB} **{side}**)\nglhf!\n\n:warning: **And dont forget to screenshot the end result**! :warning: '\
-                          .format(teamA=self.teamA,
-                                  teamB=self.teamB,
+                          .format(teamA=self.teamA.name,
+                                  teamB=self.teamB.name,
                                   map1=map_id,
                                   side=self.chosen_side))
 
         await handle.broadcast('match_starting', ':arrow_forward: Match starting: `{match_id}`\n**{teamA}** vs **{teamB}**\n - Map: **{map1}** ({teamB} **{side}**)\n'\
-                               .format(teamA=self.teamA,
-                                       teamB=self.teamB,
+                               .format(teamA=self.teamA.name,
+                                       teamB=self.teamB.name,
                                        map1=map_id,
                                        side=self.chosen_side,
                                        match_id=handle.channel.name))
@@ -188,15 +222,15 @@ class MatchBo2(Match):
 
     async def summary(self, handle):
         await handle.send('Pick & ban sequence finished!\n\nMap 1: **{map1}** ({teamB} **{side}**)\nMap 2: **{map2}** ({teamA} **{side}**)\nglhf!\n\n:warning: **And dont forget to screenshot all match results**! :warning:'\
-                          .format(teamA=self.teamA,
-                                  teamB=self.teamB,
+                          .format(teamA=self.teamA.name,
+                                  teamB=self.teamB.name,
                                   map1=self.picked_maps[0],
                                   map2=self.picked_maps[1],
                                   side=self.chosen_side))
 
         await handle.broadcast('match_starting', ':arrow_forward: Match starting: `{match_id}`\n**{teamA}** vs **{teamB}**\n - Map 1: **{map1}** ({teamB} **{side}**)\n - Map 2: **{map2}** ({teamA} **{side}**)\n'\
-                          .format(teamA=self.teamA,
-                                  teamB=self.teamB,
+                          .format(teamA=self.teamA.name,
+                                  teamB=self.teamB.name,
                                   map1=self.picked_maps[0],
                                   map2=self.picked_maps[1],
                                   side=self.chosen_side,
@@ -214,16 +248,16 @@ class MatchBo3(Match):
     async def summary(self, handle):
         map_id = next(e for e in self.maps if e not in self.banned_maps and e not in self.picked_maps)
         await handle.send('Pick & ban sequence finished!\n\nMap 1: **{map1}** ({teamB} **{side}**)\nMap 2: **{map2}** ({teamA} **{side}**)\nTie-breaker map: **{map3}** ({teamB} **{side}**)\nglhf!\n\n:warning: **And dont forget to screenshot all match results**! :warning:'\
-                          .format(teamA=self.teamA,
-                                  teamB=self.teamB,
+                          .format(teamA=self.teamA.name,
+                                  teamB=self.teamB.name,
                                   map1=self.picked_maps[0],
                                   map2=self.picked_maps[1],
                                   map3=map_id,
                                   side=self.chosen_side))
 
         await handle.broadcast('match_starting', ':arrow_forward: Match starting: `{match_id}`\n**{teamA}** vs **{teamB}**\n - Map 1: **{map1}** ({teamB} **{side}**)\n - Map 2: **{map2}** ({teamA} **{side}**)\n - Tie-breaker map: **{map3}** ({teamB} **{side}**)\n'\
-                          .format(teamA=self.teamA,
-                                  teamB=self.teamB,
+                          .format(teamA=self.teamA.name,
+                                  teamB=self.teamB.name,
                                   map1=self.picked_maps[0],
                                   map2=self.picked_maps[1],
                                   map3=map_id,

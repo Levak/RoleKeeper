@@ -29,6 +29,7 @@ from team import Team, TeamCaptain
 from match import Match, MatchBo2, MatchBo3
 from inputs import sanitize_input, translit_input
 from db import open_db
+from handle import Handle
 
 welcome_message_bo1 =\
 """
@@ -216,7 +217,7 @@ class RoleKeeper:
 
     async def add_captain(self, message, server, member, team, nick, group): # TODO cup
         if not self.check_server(server):
-            return
+            return False
 
         discord_id = str(member)
 
@@ -236,21 +237,24 @@ class RoleKeeper:
         # Trigger update on member
         await self.handle_member_join(member)
 
+        return True
+
     async def remove_captain(self, message, server, member):
         if not self.check_server(server):
-            return
+            return False
 
         discord_id = str(member)
 
         if discord_id not in self.db[server]['captains']:
             await self.reply(message, '{} is not a known captain'.format(member.mention))
-            return
+            return False
 
         captain = self.db[server]['captains'][discord_id]
 
         captain_role = self.get_special_role(server, 'captain') # TODO cup, which cup? not special?
         group_role = self.db[server]['groups'][captain.group]
-        team_role = captain.team
+        team = captain.team
+        team_role = team.role if team else None
 
         crole_name = captain_role.name if captain_role else ''
         grole_name = group_role.name if group_role else ''
@@ -264,8 +268,6 @@ class RoleKeeper:
                            crole=crole_name,
                            grole=grole_name,
                            trole=trole_name))
-
-            del self.db[server]['teams'][trole_name]
         except:
             print ('WARNING: Failed to remove roles "{crole}", "{grole}" and "{trole}" from "{member}"'\
                    .format(member=discord_id,
@@ -284,7 +286,7 @@ class RoleKeeper:
                 print ('WARNING: Failed to delete role "{role}"'\
                        .format(role=trole_name))
                 pass
-
+            del self.db[server]['teams'][trole_name]
 
         # Reset member nickname
         try:
@@ -299,20 +301,22 @@ class RoleKeeper:
         # Remove captain from DB
         del self.db[server]['captains'][discord_id]
 
+        return True
+
     # Refresh internal structures
     # 1. Reparse team captain file
     # 2. Refill group cache
     # 3. Visit all members with no role
     async def refresh(self, server):
         if not self.check_server(server):
-            return
+            return False
 
         # TODO cups
 
         # TODO remove, use CSV upload instead
         # Reparse team captain file
         self.parse_teams(server, self.config['servers'][server.name]['captains'])
-        await self.create_all_roles(server)
+        await self.create_all_teams(server)
 
         # Visit all members with no role
         for member in server.members:
@@ -320,23 +324,28 @@ class RoleKeeper:
                 print('- Member without role: {}'.format(member))
                 await self.handle_member_join(member)
 
+
+        return True
+
     # Go through the parsed captain list and create all team roles
     # TODO remove this
-    async def create_all_roles(self, server):
+    async def create_all_teams(self, server):
         if not self.check_server(server):
-            return
+            return False
 
         self.db[server]['teams'] = {}
         for _, captain in self.db[server]['captains'].items():
-            role = await self.create_team_role(server, captain.team_name)
-            captain.team = role
+            team = await self.create_team(server, captain.team_name)
+            captain.team = team
+
+        return True
 
     # Create team captain role
-    async def create_team_role(self, server, team_name):
+    async def create_team(self, server, team_name):
         role_name = self.config['roles']['team'].format(team_name)
 
         if role_name in self.db[server]['teams']:
-            return self.db[server]['teams'][role_name].role
+            return self.db[server]['teams'][role_name]
 
         role = discord.utils.get(server.roles, name=role_name)
 
@@ -352,9 +361,10 @@ class RoleKeeper:
 
         role.name = role_name # This is a hotfix
 
-        self.db[server]['teams'][role_name] = Team(team_name, role)
+        team = Team(team_name, role)
+        self.db[server]['teams'][role_name] = team
 
-        return role
+        return team
 
     # Whenever a new member joins into the Discord server
     # 1. Create a user group just for the Team captain
@@ -378,8 +388,9 @@ class RoleKeeper:
         captain = self.db[server]['captains'][discord_id]
 
         # Create role
-        team_role = await self.create_team_role(server, captain.team_name) # TODO cup
-        captain.team = team_role
+        team = await self.create_team(server, captain.team_name) # TODO cup
+        team_role = team.role if team else None
+        captain.team = team
 
         # Assign user roles
         group_role = self.db[server]['groups'][captain.group]
@@ -423,7 +434,7 @@ class RoleKeeper:
     # 4. Register the match to internal logic for commands like !ban x !pick x
     async def matchup(self, message, server, _roleteamA, _roleteamB, mode=MATCH_BO1): # TODO cup
         if not self.check_server(server):
-            return
+            return False
 
         randomized = [ _roleteamA, _roleteamB ]
         random.shuffle(randomized)
@@ -443,7 +454,7 @@ class RoleKeeper:
 
         if notfound:
             await self.reply(message, 'Role "{}" is not a known team'.format(notfound))
-            return
+            return False
 
         roleteamA_name_safe = sanitize_input(translit_input(teamA.name))
         roleteamB_name_safe = sanitize_input(translit_input(teamB.name))
@@ -491,17 +502,17 @@ class RoleKeeper:
         maps = self.config['servers'][server.name]['maps']
 
         if mode == self.MATCH_BO3:
-            match = MatchBo3(roleteamA, roleteamB, maps)
+            match = MatchBo3(teamA, teamB, maps)
             template = welcome_message_bo3
         elif mode == self.MATCH_BO2:
-            match = MatchBo2(roleteamA, roleteamB, maps)
+            match = MatchBo2(teamA, teamB, maps)
             template = welcome_message_bo2
         else:
-            match = Match(roleteamA, roleteamB, maps)
+            match = Match(teamA, teamB, maps)
             template = welcome_message_bo1
 
         self.db[server]['matches'][channel_name] = match
-        handle = Handle(self, None, channel)
+        handle = Handle(self, channel=channel)
         msg = template.format(m_teamA=roleteamA.mention,
                               m_teamB=roleteamB.mention,
                               teamA=teamA.name,
@@ -510,6 +521,9 @@ class RoleKeeper:
 
         await self.client.send_message(channel, msg)
         await match.begin(handle)
+
+        return True
+
 
     # Returns if a member is a team captain in the given channel
     def is_captain_in_match(self, member, channel):
@@ -524,74 +538,92 @@ class RoleKeeper:
         return self.db[server]['matches'][channel.name].is_in_match(member)
 
     # Ban a map
-    async def ban_map(self, member, channel, map_unsafe, force=False):
-        server = member.server
+    async def ban_map(self, message, map_unsafe, force=False):
+        server = message.author.server
+        channel = message.channel
         banned_map_safe = sanitize_input(translit_input(map_unsafe))
 
         if not self.check_server(server):
-            return
+            return False
 
         if channel.name not in self.db[server]['matches']:
-            return
+            return False
 
-        handle = Handle(self, member, channel)
-        await self.db[server]['matches'][channel.name].ban_map(handle, banned_map_safe, force)
+        handle = Handle(self, message=message)
+        return await self.db[server]['matches'][channel.name].ban_map(handle, banned_map_safe, force)
 
     # Pick a map
-    async def pick_map(self, member, channel, map_unsafe, force=False):
-        server = member.server
+    async def pick_map(self, message, map_unsafe, force=False):
+        server = message.author.server
+        channel = message.channel
         picked_map_safe = sanitize_input(translit_input(map_unsafe))
 
         if not self.check_server(server):
-            return
+            return False
 
         if channel.name not in self.db[server]['matches']:
-            return
+            return False
 
-        handle = Handle(self, member, channel)
-        await self.db[server]['matches'][channel.name].pick_map(handle, picked_map_safe, force)
+        handle = Handle(self, message=message)
+        return await self.db[server]['matches'][channel.name].pick_map(handle, picked_map_safe, force)
 
     # Choose sides
-    async def choose_side(self, member, channel, side_unsafe, force=False):
-        server = member.server
+    async def choose_side(self, message, side_unsafe, force=False):
+        server = message.author.server
+        channel = message.channel
         side_safe = sanitize_input(translit_input(side_unsafe))
 
         if not self.check_server(server):
-            return
+            return False
 
         if channel.name not in self.db[server]['matches']:
-            return
+            return False
 
-        handle = Handle(self, member, channel)
-        await self.db[server]['matches'][channel.name].choose_side(handle, side_safe, force)
+        handle = Handle(self, message=message)
+        return await self.db[server]['matches'][channel.name].choose_side(handle, side_safe, force)
 
     # Broadcast information that the match is or will be streamed
     # 1. Notify captains match will be streamed
+    # 2. Give permission to streamer to see match room
+    # 3. Invite streamer to join it
     async def stream_match(self, message, match_id):
         server = message.server
 
         if not self.check_server(server):
-            return
+            return False
 
         member = message.author
         channel = discord.utils.get(member.server.channels, name=match_id)
 
         # If we found a channel with the given name
-        if channel:
-
-            # 1. Notify captains match will be streamed
-            await self.client.send_message(
-                channel, ':eye::popcorn: _**{}** will stream this match!_ :movie_camera::satellite:\n'
-                ':arrow_forward: _8.6 Teams participating in a streamed match get an additional 10 minutes to prepare; the time of the match may change per the decision of the Staff/Organizers._\n'\
-                .format(member.nick if member.nick else member.name))
-            await self.reply(message, 'roger!')
-
-            print('Notified "{channel}" the match will be streamed by "{member}"'\
-                  .format(channel=channel.name,
-                          member=str(member)))
-        else:
+        if not channel:
             await self.reply(message, 'This match does not exist!')
+            return False
 
+        # 1. Notify captains match will be streamed
+        await self.client.send_message(
+            channel, ':eye::popcorn: _**{}** will stream this match!_ :movie_camera::satellite:\n'
+            ':arrow_forward: _8.6 Teams participating in a streamed match get an additional 10 minutes to prepare; the time of the match may change per the decision of the Staff/Organizers._\n'\
+            .format(member.nick if member.nick else member.name))
+
+        print('Notified "{channel}" the match will be streamed by "{member}"'\
+              .format(channel=channel.name,
+                      member=str(member)))
+
+        if False: #TODO
+            # 2. Give permission to streamer to see match room
+            overwrite = discord.PermissionOverwrite()
+            overwrite.read_messages = True
+            await client.edit_channel_permissions(channel, member, overwrite)
+
+            print('Gave permission to "{member}" to see channel "{channel}"'\
+                  .format(channel=channel.name,
+                  member=str(member)))
+
+            # 3. Invite streamer to join it
+            await self.reply(message, 'Roger! Checkout {}'.format(channel.mention)) #TODO
+
+        return True
 
     # Remove all teams
     # 1. Delete all existing team roles
@@ -601,7 +633,7 @@ class RoleKeeper:
     # 5. Reset member nickname
     async def wipe_teams(self, server):
         if not self.check_server(server):
-            return
+            return False
 
         captain_role = self.get_special_role(server, 'captain') # TODO cup, not special?
 
@@ -663,12 +695,14 @@ class RoleKeeper:
 
         self.db[server]['captains'].clear() # TODO cup
 
+        return True
+
     # Remove all match rooms
     # 1. Find all match channels that where created by the bot for this cup
     # 2. Delete channel
     async def wipe_matches(self, server):
         if not self.check_server(server):
-            return
+            return False
 
         for channel_name in self.db[server]['matches'].keys(): # TODO cup
             channel = discord.utils.get(server.channels, name=channel_name)
@@ -683,12 +717,14 @@ class RoleKeeper:
 
         self.db[server]['matches'].clear() # TODO cup
 
+        return True
+
     # Remove all messages that are not pinned in a given channel
     async def wipe_messages(self, message, channel):
         server = message.server
 
         if not self.check_server(server):
-            return
+            return False
 
         count = 0
         try:
@@ -697,7 +733,7 @@ class RoleKeeper:
             count = len(messages_to_delete)
         except:
             print('WARNING: No permission to read logs from "{}"'.format(channel.name))
-            return
+            return False
 
         reply = await self.reply(message,
                                  'Clearing {count} message(s)... (this might take a while)'\
@@ -717,22 +753,26 @@ class RoleKeeper:
         print ('Deleted {count} messages in "{channel}"'\
                .format(count=count, channel=channel.name))
 
+        return True
+
     # Announcement message
     async def announce(self, msg, message):
         server = message.server
 
         if not self.check_server(server):
-            return
+            return False
 
-        handle = Handle(self, message.author, message.channel)
+        handle = Handle(self, message=message)
         await handle.broadcast('announcement', msg)
 
+        return True
+
     # Export full list of members as CSV
-    async def export_members(self, msg, message):
+    async def export_members(self, message):
         server = message.server
 
         if not self.check_server(server):
-            return
+            return False
 
         csv = io.BytesIO()
         csv.write('#discord_id\n'.encode())
@@ -761,47 +801,70 @@ class RoleKeeper:
 
         csv.close()
 
+        return True
 
-class Handle:
-    def __init__(self, bot, member, channel):
-        self.bot = bot
-        self.member = member
-        self.channel = channel
+    # Export pick&ban stats for a running cup
+    async def export_stats(self, message): # TODO cup
+        server = message.server
 
-        self.team = None
+        if not self.check_server(server):
+            return False
 
-        if member:
-            try:
-                self.team = bot.db[member.server]['captains'][str(member)].team # TODO cup
-            except KeyError:
-                pass
+        csv = io.BytesIO()
+        csv.write('#action,map,count\n'.encode())
 
-    async def reply(self, msg):
-        return await self.send('{} {}'.format(self.member.mention, msg))
+        banned_maps = {}
+        picked_maps = {}
+        sides = { 'attacks': 0, 'defends': 0 }
 
-    async def send(self, msg):
+        for match in self.db[server]['matches'].values():
+            if not match.is_done():
+                continue
+
+            for m in match.banned_maps:
+                if m in banned_maps:
+                    banned_maps[m] += 1
+                else:
+                    banned_maps[m] = 1
+            for m in match.picked_maps:
+                if m in picked_maps:
+                    picked_maps[m] += 1
+                else:
+                    picked_maps[m] = 1
+
+            sides[match.chosen_side] += 1
+
+        for bm, count in banned_maps.items():
+            csv.write('ban,{map},{count}\n'\
+                      .format(map=bm,
+                              count=count).encode())
+
+        for pm, count in picked_maps.items():
+            csv.write('pick,{map},{count}\n'\
+                      .format(map=pm,
+                              count=count).encode())
+
+        for cs, count in sides.items():
+            csv.write('side,{side},{count}\n'\
+                      .format(side=cs,
+                              count=count).encode())
+
+        csv.seek(0)
+
+        filename = 'stats-{}.csv'.format(self.config['servers'][server.name]['db']) # TODO cup
+        msg = '{mention} Here are the pick&ban stats'\
+            .format(mention=message.author.mention)
+
         try:
-            return await self.bot.client.send_message(self.channel, msg)
-        except discord.errors.HTTPException as e:
-            print('WARNING: HTTPexception: {}'.format(str(e)))
-            await asyncio.sleep(10)
-            return await self.send(msg)
+            await self.client.send_file(message.channel,
+                                        csv,
+                                        filename=filename,
+                                        content=msg)
+            print ('Sent pick&ban stats')
+        except Exception as e:
+            print ('ERROR: Failed to send pick&ban stats')
+            raise e
 
-    async def broadcast(self, bcast_id, msg):
-        channels = []
-        try:
-            channels = self.bot.config['servers'][self.channel.server.name]['rooms'][bcast_id]
-        except:
-            print('WARNING: No broadcast configuration for "{}"'.format(bcast_id))
-            pass
+        csv.close()
 
-        for channel_name in channels:
-            channel = discord.utils.get(self.channel.server.channels, name=channel_name)
-            if channel:
-                try:
-                    await self.bot.client.send_message(channel, msg)
-                except:
-                    print('WARNING: No permission to write in "{}"'.format(channel_name))
-                    pass
-            else:
-                print ('WARNING: Missing channel {}'.format(channel_name))
+        return True

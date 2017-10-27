@@ -59,6 +59,10 @@ async def on_member_join(member):
 
 @client.event
 async def on_message(message):
+    # If we are the one sending a message, skip
+    if message.author == rk.client.user:
+        return
+
     # If message is a DM
     if type(message.author) is discord.User:
         await rk.on_dm(message)
@@ -75,144 +79,168 @@ async def on_message(message):
     command = message.content.split()[0]
     args = message.content.replace(command, '', 1).strip()
 
+    ret = False
+    exception = None
+
+    try:
+
     # ADMIN COMMANDS
     #----------------
 
-    if command == '!refresh' and is_admin:
-        await rk.refresh(message.author.server)
-    elif command == '!create_teams' and is_admin:
-        await rk.create_all_roles(message.author.server)
+        if command == '!refresh' and is_admin:
+            ret = await rk.refresh(message.author.server)
+        elif command == '!create_teams' and is_admin:
+            ret = await rk.create_all_teams(message.author.server)
 
-    elif command == '!wipe_teams' and is_admin:
-        await rk.wipe_teams(message.author.server)
+        elif command == '!wipe_teams' and is_admin:
+            ret = await rk.wipe_teams(message.author.server)
 
-    elif command == '!wipe_matches' and is_admin:
-        await rk.wipe_matches(message.author.server)
+        elif command == '!wipe_matches' and is_admin:
+            ret = await rk.wipe_matches(message.author.server)
 
-    elif command == '!wipe_messages' and is_admin:
-        if len(message.channel_mentions) < 1:
-            await rk.reply(message,
-                           'Not enough arguments:\n```!wipe_messages #channel```')
-        else:
-            await rk.wipe_messages(message, message.channel_mentions[0])
-
-    elif command == '!announce' and is_admin:
-        await rk.announce(args, message)
-
-    elif command == '!members' and is_admin:
-        await rk.export_members(args, message)
-
-    # REF COMMANDS
-    #--------------
-
-    elif command == '!add_captain' and is_ref:
-        parts = args.split()
-        if len(message.mentions) == 1 and len(parts) >= 4:
-            await rk.add_captain(message,
-                                 message.author.server,
-                                 message.mentions[0], # TODO check it's the first argument?
-                                 parts[1],
-                                 parts[2],
-                                 parts[3])
-        else:
-            await rk.reply(message,
-                           'Too much or not enough arguments:\n```!add_captain @xxx team nick group```')
-
-    elif command == '!remove_captain' and is_ref:
-        if len(message.mentions) == 1:
-            await rk.remove_captain(message,
-                                    message.author.server,
-                                    message.mentions[0])
-        else:
-            await rk.reply(message,
-                           'Too much or not enough arguments:\n```!remove_captain @xxx```')
-
-    elif command == '!bo1' and is_ref:
-        if len(message.role_mentions) == 2:
-            await rk.matchup(message,
-                             message.author.server,
-                             message.role_mentions[0],
-                             message.role_mentions[1],
-                             mode=RoleKeeper.MATCH_BO1)
-        else:
-            await rk.reply(message,
-                           'Too much or not enough arguments:\n```!bo1 @xxx @yyy```')
-
-    elif command == '!bo2' and is_ref:
-        if len(message.role_mentions) == 2:
-            await rk.matchup(message,
-                             message.author.server,
-                             message.role_mentions[0],
-                             message.role_mentions[1],
-                             mode=RoleKeeper.MATCH_BO2)
-        else:
-            await rk.reply(message,
-                           'Too much or not enough arguments:\n```!bo2 @xxx @yyy```')
-
-    elif command == '!bo3' and is_ref:
-        if len(message.role_mentions) == 2:
-            await rk.matchup(message,
-                             message.author.server,
-                             message.role_mentions[0],
-                             message.role_mentions[1],
-                             mode=RoleKeeper.MATCH_BO3)
-        else:
-            await rk.reply(message,
-                           'Too much or not enough arguments:\n```!bo3 @xxx @yyy```')
-
-    elif command == '!say' and is_ref:
-        parts = args.split()
-        if len(parts) <= 1:
-            await rk.reply(message,
-                           'Not enough arguments:\n```!say #channel message...```')
-        else:
-            channel_id = parts[0]
-            if channel_id.startswith('<'):
-                channel_id = channel_id[2:-1]
-                channel = discord.utils.get(message.author.server.channels, id=channel_id)
+        elif command == '!wipe_messages' and is_admin:
+            if len(message.channel_mentions) < 1:
+                await rk.reply(message,
+                               'Not enough arguments:\n```!wipe_messages #channel```')
             else:
-                channel = discord.utils.get(message.author.server.channels, name=channel_id)
+                ret = await rk.wipe_messages(message, message.channel_mentions[0])
 
-            if channel:
-                msg = args.replace(parts[0], '', 1)
-                try:
-                    await rk.client.send_message(channel, msg)
-                except:
-                    await rk.reply(message,
-                                   'I do not see channel `#{}`'.format(channel.name))
+        elif command == '!announce' and is_admin:
+            ret = await rk.announce(args, message)
+
+        elif command == '!members' and is_admin:
+            ret = await rk.export_members(message)
+
+        elif command == '!stats' and is_admin:
+            ret = await rk.export_stats(message)
+
+        # REF COMMANDS
+        #--------------
+
+        elif command == '!add_captain' and is_ref:
+            parts = args.split()
+            if len(message.mentions) == 1 and len(parts) >= 4:
+                ret = await rk.add_captain(message,
+                                           message.author.server,
+                                           message.mentions[0], # TODO check it's the first argument?
+                                           parts[1],
+                                           parts[2],
+                                           parts[3])
             else:
                 await rk.reply(message,
-                               'No channel named `#{}`'.format(channel_id))
+                               'Too much or not enough arguments:\n```!add_captain @xxx team nick group```')
+
+        elif command == '!remove_captain' and is_ref:
+            if len(message.mentions) == 1:
+                ret = await rk.remove_captain(message,
+                                              message.author.server,
+                                              message.mentions[0])
+            else:
+                await rk.reply(message,
+                               'Too much or not enough arguments:\n```!remove_captain @xxx```')
+
+        elif command == '!bo1' and is_ref:
+            if len(message.role_mentions) == 2:
+                ret = await rk.matchup(message,
+                                       message.author.server,
+                                       message.role_mentions[0],
+                                       message.role_mentions[1],
+                                       mode=RoleKeeper.MATCH_BO1)
+            else:
+                await rk.reply(message,
+                               'Too much or not enough arguments:\n```!bo1 @xxx @yyy```')
+
+        elif command == '!bo2' and is_ref:
+            if len(message.role_mentions) == 2:
+                ret = await rk.matchup(message,
+                                       message.author.server,
+                                       message.role_mentions[0],
+                                       message.role_mentions[1],
+                                       mode=RoleKeeper.MATCH_BO2)
+            else:
+                await rk.reply(message,
+                               'Too much or not enough arguments:\n```!bo2 @xxx @yyy```')
+
+        elif command == '!bo3' and is_ref:
+            if len(message.role_mentions) == 2:
+                ret = await rk.matchup(message,
+                                       message.author.server,
+                                       message.role_mentions[0],
+                                       message.role_mentions[1],
+                                       mode=RoleKeeper.MATCH_BO3)
+            else:
+                await rk.reply(message,
+                               'Too much or not enough arguments:\n```!bo3 @xxx @yyy```')
+
+        elif command == '!say' and is_ref:
+            parts = args.split()
+            if len(parts) <= 1:
+                await rk.reply(message,
+                               'Not enough arguments:\n```!say #channel message...```')
+            else:
+                channel_id = parts[0]
+                if channel_id.startswith('<'):
+                    channel_id = channel_id[2:-1]
+                    channel = discord.utils.get(message.author.server.channels, id=channel_id)
+                else:
+                    channel = discord.utils.get(message.author.server.channels, name=channel_id)
+
+                if channel:
+                    msg = args.replace(parts[0], '', 1)
+                    try:
+                        await rk.client.send_message(channel, msg)
+                        ret = True
+                    except:
+                        await rk.reply(message,
+                                       'I do not see channel `#{}`'.format(channel.name))
+                else:
+                    await rk.reply(message,
+                                   'No channel named `#{}`'.format(channel_id))
+
+        # CAPTAIN COMMANDS
+        #-------------------
 
 
-    # CAPTAIN COMMANDS
-    #-------------------
+        elif command == '!ban' and is_captain_in_match:
+            ret = await rk.ban_map(message,
+                                   args.split()[0] if len(args) > 0 else '',
+                                   force=is_ref)
+
+        elif command == '!pick' and is_captain_in_match:
+            ret = await rk.pick_map(message,
+                                    args.split()[0] if len(args) > 0 else '',
+                                    force=is_ref)
+
+        elif command == '!side'  and is_captain_in_match:
+            ret = await rk.choose_side(message,
+                                       args.split()[0] if len(args) > 0 else '',
+                                       force=is_ref)
+
+        # STREAMER COMMANDS
+        #-------------------
+
+        elif command == '!stream' and is_streamer:
+            ret = await rk.stream_match(message,
+                                        args.split()[0] if len(args) > 0 else '')
 
 
-    elif command == '!ban' and is_captain_in_match:
-        await rk.ban_map(message.author,
-                         message.channel,
-                         args.split()[0] if len(args) > 0 else '',
-                         force=is_ref)
+        # Unknown command, probably not for us:
+        #-------------------------------------
+        else:
+            return
 
-    elif command == '!pick' and is_captain_in_match:
-        await rk.pick_map(message.author,
-                          message.channel,
-                          args.split()[0] if len(args) > 0 else '',
-                          force=is_ref)
+    except Exception as e:
+        ret = False
+        exception = e
 
-    elif command == '!side'  and is_captain_in_match:
-        await rk.choose_side(message.author,
-                             message.channel,
-                             args.split()[0] if len(args) > 0 else '',
-                             force=is_ref)
+    try:
+        await rk.client.add_reaction(message,
+                                     '\N{WHITE HEAVY CHECK MARK}' if ret else '\N{NO ENTRY}')
+    except:
+        pass
 
-    # STREAMER COMMANDS
-    #-------------------
-
-    elif command == '!stream' and is_streamer:
-        await rk.stream_match(message,
-                              args.split()[0] if len(args) > 0 else '')
+    if exception:
+        raise exception
 
 if __name__ == '__main__':
 
