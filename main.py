@@ -114,6 +114,24 @@ async def on_message(message):
         elif command == '!stats' and is_admin:
             ret = await rk.export_stats(message)
 
+        elif command == '!start_cup' and is_admin:
+            if len(message.attachments) > 0 and len(args) > 0:
+                ret = await rk.start_cup(message,
+                                         args,
+                                         message.attachments[0])
+            else:
+                await rk.reply(message,
+                               'Too much or not enough arguments:\n```!start_cup name // TEAMS.csv```')
+
+        elif command == '!check_cup' and is_admin:
+            if len(message.attachments) > 0 and len(args) > 0:
+                ret = await rk.check_cup(message,
+                                         args,
+                                         message.attachments[0])
+            else:
+                await rk.reply(message,
+                               'Too much or not enough arguments:\n```!check_cup name // TEAMS.csv```')
+
         # REF COMMANDS
         #--------------
 

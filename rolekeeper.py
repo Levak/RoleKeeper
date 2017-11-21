@@ -19,10 +19,13 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
+import requests
+import uuid
 import discord
 import asyncio
 import csv
 import random
+import re
 import io
 
 from team import Team, TeamCaptain
@@ -38,6 +41,12 @@ Welcome {m_teamA} and {m_teamB}!
 This text channel will be used by the judge and team captains to exchange anything about the match between teams {teamA} and {teamB}.
 This sequence is made using the `!ban` command team by team until one remains.
 Last team to ban also needs to chose the side they will play on using `!side xxxx` (attack or defend).
+
+ - {teamA} bans, {teamB} bans,
+ - {teamA} bans, {teamB} bans,
+ - {teamA} bans, {teamB} bans,
+ - Last map remaining is the map to play,
+ - {teamB} picks the side (attack or defend).
 
 For instance, team A types `!ban Pyramid` which will then ban the map _Pyramid_ from the match, team B types `!ban d17` which will ban the map D-17, and so on, until only one map remains. team B then picks the side using `!side attack`.
 """
@@ -94,43 +103,71 @@ class RoleKeeper:
             return False
         return True
 
+    # Parse header from CSV file
+    def parse_header(self, header):
+        return { e: header.index(e) for e in header }
+
     # Parse members from CSV file
-    def parse_teams(self, server, filepath): # TODO cup
+    def parse_teams(self, server, csvfile): # TODO cup
         captains = {}
         groups = {}
 
-        self.db[server]['roles'] = {}
+        self.db[server]['roles'] = {} # TODO remove
 
-        with open(filepath) as csvfile:
-            reader = csv.reader(csvfile, delimiter=',', quotechar='"')
+        if csvfile:
+            dialect = csv.Sniffer().sniff(csvfile.read(1024), delimiters=',;')
+            csvfile.seek(0)
+            reader = csv.reader(csvfile, dialect)
+
+            header = None
+
             for row in reader:
                 # Skip empty lines and lines starting with #
                 if len(row) <= 0 or row[0].startswith('#'):
+                    # If we didn't parse header yet, first comment is usually it
+                    if not header:
+                        row[0] = row[0][1:] # Delete the '#'
+                        header = self.parse_header(row)
                     continue
 
-                discord_id = row[0].strip()
-                team_name = row[1].strip()
-                nickname = row[2].strip()
-                group_id = row[3].strip() # TODO test what happens with empty group
+                # If we didn't parse header yet, it's the first line
+                if not header:
+                    header = self.parse_header(row)
+                    continue
 
-                captains[discord_id] = \
+                discord_id = row[header['discord']].strip()
+                team_name = row[header['team_name']].strip()
+                nickname = row[header['nickname']].strip()
+
+                # If the file doesn't contain groups, not a problem, just ignore it
+                if 'group' not in header:
+                    group_id = None
+                else:
+                    group_id = row[header['group']].strip()
+
+                # If the member hasn't given any Discord ID, make one up
+                if len(discord_id) == 0:
+                    key = uuid.uuid4()
+                else:
+                    key = discord_id
+
+                captains[key] = \
                     TeamCaptain(discord_id, team_name, nickname, group_id)
 
                 # If group is new to us, cache it
-                if group_id not in groups:
+                if group_id and group_id not in groups:
                     group_name = self.config['roles']['group'].format(group_id) # TODO cup
                     group = discord.utils.get(server.roles, name=group_name)
                     print('{id}: {g}'.format(id=group_id, g=group))
                     groups[group_id] = group
-                    self.cache_role(server, group_name)
+                    self.cache_role(server, group_name) # TODO remove
 
         print('Parsed teams:')
         # Print parsed members
         for m in captains:
             print('-> {}'.format(captains[m]))
 
-        self.db[server]['captains'] = captains # TODO Add cup
-        self.db[server]['groups'] = groups # TODO cup/ref?
+        return captains, groups
 
     def open_db(self, server):
         if server in self.db and self.db[server]:
@@ -252,18 +289,22 @@ class RoleKeeper:
         captain = self.db[server]['captains'][discord_id]
 
         captain_role = self.get_special_role(server, 'captain') # TODO cup, which cup? not special?
-        group_role = self.db[server]['groups'][captain.group]
+        group_role = self.db[server]['groups'][captain.group] if captain.group else None
         team = captain.team
         team_role = team.role if team else None
 
         crole_name = captain_role.name if captain_role else ''
-        grole_name = group_role.name if group_role else ''
+        grole_name = group_role.name if group_role else '<no group>'
         trole_name = team_role.name if team_role else ''
 
         # Remove team, team captain and group roles from member
         try:
-            await self.client.remove_roles(member, captain_role, group_role, team_role)
-            print ('Remove roles "{crole}", "{grole}" and "{trole}" from "{member}"'\
+            if group_role:
+                await self.client.remove_roles(member, captain_role, team_role, group_role)
+            else:
+                await self.client.remove_roles(member, captain_role, team_role)
+
+            print ('Removed roles "{crole}", "{grole}" and "{trole}" from "{member}"'\
                    .format(member=discord_id,
                            crole=crole_name,
                            grole=grole_name,
@@ -315,7 +356,12 @@ class RoleKeeper:
 
         # TODO remove, use CSV upload instead
         # Reparse team captain file
-        self.parse_teams(server, self.config['servers'][server.name]['captains'])
+        with open(self.config['servers'][server.name]['captains']) as csvfile:
+            captains, groups = self.parse_teams(server, csvfile)
+
+            self.db[server]['captains'] = captains # TODO Add cup
+            self.db[server]['groups'] = groups # TODO cup/ref?
+
         await self.create_all_teams(server)
 
         # Visit all members with no role
@@ -378,8 +424,8 @@ class RoleKeeper:
         # TODO find cup from discord_id
 
         if discord_id not in self.db[server]['captains']:
-            print('WARNING: New user "{}" not in captain list'\
-                  .format(discord_id))
+            #print('WARNING: New user "{}" not in captain list'\
+            #      .format(discord_id))
             return
 
         print('Team captain "{}" joined server'\
@@ -393,17 +439,19 @@ class RoleKeeper:
         captain.team = team
 
         # Assign user roles
-        group_role = self.db[server]['groups'][captain.group]
+        group_role = self.db[server]['groups'][captain.group] if captain.group else None
         captain_role = self.get_special_role(server, 'captain') # TODO cup, which cup? not special?
 
-        if team_role and captain_role and group_role:
-            await self.client.add_roles(member, team_role, captain_role, group_role)
-        else:
+        try:
+            if group_role:
+                await self.client.add_roles(member, team_role, captain_role, group_role)
+            else:
+                await self.client.add_roles(member, team_role, captain_role)
+            print('Assigned role <{role}> to "{id}"'\
+                  .format(role=team_role.name, id=discord_id))
+        except:
             print('ERROR: Missing one role out of R:{} C:{} G:{}'\
                   .format(team_role, captain_role, group_role))
-
-        print('Assigned role <{role}> to "{id}"'\
-              .format(role=team_role.name, id=discord_id))
 
         # Change nickname of team captain
         nickname = '{}'.format(captain.nickname)
@@ -603,7 +651,8 @@ class RoleKeeper:
         # 1. Notify captains match will be streamed
         await self.client.send_message(
             channel, ':eye::popcorn: _**{}** will stream this match!_ :movie_camera::satellite:\n'
-            ':arrow_forward: _8.6 Teams participating in a streamed match get an additional 10 minutes to prepare; the time of the match may change per the decision of the Staff/Organizers._\n'\
+            ':arrow_forward: _8.9. The teams whose match will be officially streamed will have '
+            '**only** 10 minutes to assemble._\n'\
             .format(member.nick if member.nick else member.name))
 
         print('Notified "{channel}" the match will be streamed by "{member}"'\
@@ -671,8 +720,12 @@ class RoleKeeper:
 
             # 4. Remove team captain and group roles from member
             try:
-                await self.client.remove_roles(member, captain_role, group_role)
-                print ('Remove roles "{crole}" and "{grole}" from "{member}"'\
+                if group_role:
+                    await self.client.remove_roles(member, captain_role, group_role)
+                else:
+                    await self.client.remove_roles(member, captain_role)
+
+                print ('Removed roles "{crole}" and "{grole}" from "{member}"'\
                        .format(member=discord_id,
                                crole=crole_name,
                                grole=grole_name))
@@ -867,4 +920,90 @@ class RoleKeeper:
 
         csv.close()
 
+        return True
+
+    def discord_validate(self, did):
+        return not did.startswith('@') \
+            and not did.startswith('#') \
+            and re.match('^.*[^ ]#[0-9]+$', did)
+
+    # Check a CSV file before launching a cup
+    # 1. Parse the CSV file
+    # 2. For all parsed captains:
+    #    A. List all captains not in server
+    #    B. List all captains with invalid Discord ID
+    #    C. List all captains with no Discord ID.
+    async def check_cup(self, message, name, attachment, checkonly=True):
+        server = message.server
+
+        if not self.check_server(server):
+            return False
+
+        # Fetch the CSV file and parse it
+        r = requests.get(attachment['url'])
+
+        print(r.encoding) # TODO Check UTF8 / ISO problems
+        r.encoding = 'utf-8'
+
+        csv = io.StringIO(r.text)
+        captains, groups = self.parse_teams(server, csv) # TODO cup
+        csv.close()
+
+        if not checkonly:
+            self.db[server]['captains'] = captains # TODO Add cup
+            self.db[server]['groups'] = groups # TODO cup/ref?
+
+        await self.create_all_teams(server)
+
+        # Visit all members with no role
+        for member in server.members:
+            if len(member.roles) == 1:
+                #print('- Member without role: {}'.format(member))
+                await self.handle_member_join(member)
+
+        # Collect missing captain Discords
+        missing_discords = []
+        invalid_discords = []
+        missing_members = []
+        for captain in captains.values():
+            if not captain.discord:
+                missing_discords.append('`{}` (Team `{}`)'.format(captain.nickname, captain.team_name))
+            elif not self.discord_validate(captain.discord):
+                invalid_discords.append('`{}` (Team `{}`): `{}`'.format(captain.nickname, captain.team_name, captain.discord))
+            elif not discord.utils.find(lambda m: str(m) == captain.discord, server.members):
+                missing_members.append('`{}` (Team `{}`): `{}`'.format(captain.nickname, captain.team_name, captain.discord))
+
+        total = len(captains)
+        report = 'Imported {count}/{total} teams'.format(
+            total=total,
+            count=total \
+            - len(missing_members) \
+            - len(missing_discords) \
+            - len(invalid_discords))
+
+        if len(missing_members) > 0:
+            report = '{}\n\n:shrug: **Missing members**\n - {}'.format(report, '\n - '.join(missing_members))
+        if len(missing_discords) > 0:
+            report = '{}\n\n:mag: **Missing Discord IDs**\n - {}'.format(report, '\n - '.join(missing_discords))
+        if len(invalid_discords) > 0:
+            report = '{}\n\n:no_entry_sign: **Invalid Discord IDs**\n - {}'.format(report, '\n - '.join(invalid_discords))
+
+        await self.reply(message, report)
+
+        return True
+
+    # Start a cup
+    # TODO: Maybe once the checkup is "ok", don't use CSV?
+    async def start_cup(self, message, name, attachment):
+        server = message.server
+
+        if not self.check_server(server):
+            return False
+
+        if not await self.check_cup(message, name, attachment, checkonly=False):
+            return False
+
+        print(name) # TODO cup
+
+        # TODO do actual things for the cup
         return True

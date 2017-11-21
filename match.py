@@ -80,7 +80,7 @@ class Match:
 
         team, check_action = self.sequence[self.turn]
 
-        if team != handle.team and not force:
+        if not force and team.name != handle.team.name:
             await handle.reply('Not your turn to {}!'.format(action))
             return False
 
@@ -126,7 +126,7 @@ class Match:
         self.banned_maps.append(banned_map_id)
         print('{ch}: {team} banned map {map}'\
               .format(ch=handle.channel,
-                      team=handle.team.name,
+                      team=handle.team.name if handle.team else '<referee>',
                       map=banned_map_id))
         await self.update_turn(handle)
         return True
@@ -140,7 +140,7 @@ class Match:
         self.picked_maps.append(picked_map_id)
         print('{ch}: {team} picked map {map}'\
               .format(ch=handle.channel,
-                      team=handle.team.name,
+                      team=handle.team.name if handle.team else '<referee>',
                       map=picked_map_id))
         await self.update_turn(handle)
         return True
@@ -157,7 +157,7 @@ class Match:
         self.chosen_side = side_id
         print('{ch}: {team} chose side {side}'\
               .format(ch=handle.channel,
-                      team=handle.team.name,
+                      team=handle.team.name if handle.team else '<referee>',
                       side=side_id))
         await self.update_turn(handle)
         return True
@@ -174,8 +174,6 @@ class Match:
         if self.turn_handle:
             await self.turn_handle.delete()
             self.turn_handle = None
-
-        #await handle.react_ok()
 
         msg = 'Current sequence status ({i}/{n}):\n```\n{msg}\n```'\
                           .format(i=self.turn,
