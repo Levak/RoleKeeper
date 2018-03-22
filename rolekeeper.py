@@ -46,9 +46,9 @@ Last team to ban also needs to chose the side they will play on using `!side xxx
  - {teamA} bans, {teamB} bans,
  - {teamA} bans, {teamB} bans,
  - Last map remaining is the map to play,
- - {teamB} picks the side (attack or defend).
+ - {teamA} picks the side (attack or defense).
 
-For instance, team A types `!ban Pyramid` which will then ban the map _Pyramid_ from the match, team B types `!ban d17` which will ban the map D-17, and so on, until only one map remains. team B then picks the side using `!side attack`.
+For instance, team A types `!ban Pyramid` which will then ban the map _Pyramid_ from the match, team B types `!ban d17` which will ban the map D-17, and so on, until only one map remains. team A then picks the side using `!side attack`.
 """
 
 welcome_message_bo2 =\
@@ -60,7 +60,8 @@ This sequence is made using the `!pick`, `!ban` and `!side` commands one by one 
 
  - {teamA} bans, {teamB} bans,
  - {teamA} picks, {teamB} picks,
- - {teamB} picks the side (attack or defend).
+ - {teamB} picks the side for first map (attack or defense).
+ - {teamA} picks the side for second.
 
 For instance, team A types `!ban Yard` which will then ban the map _Yard_ from the match, team B types `!ban d17` which will ban the map D-17. team A would then type `!pick Destination`, picking the first map and so on, until only one map remains, which will be the tie-breaker map. team B then picks the side using `!side attack`.
 """
@@ -76,7 +77,8 @@ This sequence is made using the `!pick`, `!ban` and `!side` commands one by one 
  - {teamA} picks, {teamB} picks,
  - {teamA} bans, {teamB} bans,
  - Last map remaining is the draw map,
- - {teamB} picks the side (attack or defend).
+ - {teamB} picks the side for first map (attack or defense).
+ - {teamA} picks the side for second and tie breaker map.
 
 For instance, team A types `!ban Yard` which will then ban the map _Yard_ from the match, team B types `!ban d17` which will ban the map D-17. team A would then type `!pick Destination`, picking the first map and so on, until only one map remains, which will be the tie-breaker map. team B then picks the side using `!side attack`.
 """
@@ -111,8 +113,6 @@ class RoleKeeper:
     def parse_teams(self, server, csvfile): # TODO cup
         captains = {}
         groups = {}
-
-        self.db[server]['roles'] = {} # TODO remove
 
         if csvfile:
             dialect = csv.Sniffer().sniff(csvfile.read(1024), delimiters=',;')
@@ -160,7 +160,6 @@ class RoleKeeper:
                     group = discord.utils.get(server.roles, name=group_name)
                     print('{id}: {g}'.format(id=group_id, g=group))
                     groups[group_id] = group
-                    self.cache_role(server, group_name) # TODO remove
 
         print('Parsed teams:')
         # Print parsed members
@@ -186,9 +185,6 @@ class RoleKeeper:
 
         if 'groups' not in self.db[server]:
             self.db[server]['groups'] = {}
-
-        if 'roles' not in self.db[server]:
-            self.db[server]['roles'] = {}
 
         if 'sroles' not in self.db[server]:
             self.db[server]['sroles'] = {}
@@ -241,16 +237,41 @@ class RoleKeeper:
             return self.db[server]['sroles'][role_id]
         return None
 
-    def cache_role(self, server, role_id):
-        role = discord.utils.get(server.roles, name=role_id)
-        self.db[server]['roles'][role_id] = role
-        if not self.db[server]['roles'][role_id]:
-            print ('WARNING: Missing role "{}" in {}'.format(role_id, server.name))
+    async def add_group(self, message, server, group_id): # TODO cup
+        if not self.check_server(server):
+            return False
 
-    def get_role(self, server, role_id):
-        if role_id in self.db[server]['roles']:
-            return self.db[server]['roles'][role_id]
-        return None
+        # Check if group exists
+        if group_id in self.db[server]['groups']:
+            await self.reply(message, 'Group "{}" already exists'.format(group_id))
+            return False
+
+        # If group is new to us, cache it
+        group_name = self.config['roles']['group'].format(group_id) # TODO cup
+        group = discord.utils.get(server.roles, name=group_name)
+
+        if not group:
+            await self.reply(message, 'Role "{}" does not exist'.format(group_name))
+            return False
+
+        self.db[server]['groups'][group_id] = group
+
+        return True
+
+    async def remove_group(self, message, server, group_id): # TODO cup
+        if not self.check_server(server):
+            return False
+
+        # Check if group exists
+        if group_id not in self.db[server]['groups']:
+            await self.reply(message, 'Group "{}" does not exist'.format(group_id))
+            return False
+
+        # TODO what to do with all the captains in that group?
+
+        del self.db[server]['groups'][group_id]
+
+        return True
 
     async def add_captain(self, message, server, member, team, nick, group): # TODO cup
         if not self.check_server(server):
@@ -265,7 +286,7 @@ class RoleKeeper:
         # Check if destination group exists
         if group not in self.db[server]['groups']:
             await self.reply(message, 'Group "{}" does not exist'.format(group))
-            return
+            return False
 
         # Add new captain to the list
         self.db[server]['captains'][discord_id] = \
@@ -365,7 +386,8 @@ class RoleKeeper:
         await self.create_all_teams(server)
 
         # Visit all members with no role
-        for member in server.members:
+        members = list(server.members)
+        for member in members:
             if len(member.roles) == 1:
                 print('- Member without role: {}'.format(member))
                 await self.handle_member_join(member)
@@ -467,26 +489,45 @@ class RoleKeeper:
 
     # Reply to a message in a channel
     async def reply(self, message, reply):
-        return await self.client.send_message(
-            message.channel,
-            '{} {}'.format(message.author.mention, reply))
+        msg = '{} {}'.format(message.author.mention, reply)
+
+        acc = ''
+        for l in msg.splitlines():
+            if len(acc) + len(l) >= 2000:
+                await self.client.send_message(message.channel, acc)
+                acc = l
+            else:
+                acc = '{}\n{}'.format(acc, l)
+
+        return await self.client.send_message(message.channel, acc)
+
 
     MATCH_BO1 = 1
     MATCH_BO2 = 2
     MATCH_BO3 = 3
+
+    REUSE_UNK = 0
+    REUSE_YES = 2
+    REUSE_NO  = 3
 
     # Create a match against 2 teams
     # 1. Create the text channel
     # 2. Add permissions to read/send to both teams, and the judge
     # 3. Send welcome message
     # 4. Register the match to internal logic for commands like !ban x !pick x
-    async def matchup(self, message, server, _roleteamA, _roleteamB, mode=MATCH_BO1): # TODO cup
+    async def matchup(self, message, server, _roleteamA, _roleteamB, mode=MATCH_BO1, flip_coin=False, reuse=REUSE_UNK): # TODO cup
         if not self.check_server(server):
             return False
 
-        randomized = [ _roleteamA, _roleteamB ]
-        random.shuffle(randomized)
-        roleteamA, roleteamB = randomized[0], randomized[1]
+        if flip_coin:
+            randomized = [ _roleteamA, _roleteamB ]
+            random.shuffle(randomized)
+            roleteamA, roleteamB = randomized[0], randomized[1]
+        else:
+            if message.content.find(_roleteamA.mention) < message.content.find(_roleteamB.mention):
+                roleteamA, roleteamB = _roleteamA, _roleteamB
+            else:
+                roleteamA, roleteamB = _roleteamB, _roleteamA
 
         notfound = None
 
@@ -506,7 +547,6 @@ class RoleKeeper:
 
         roleteamA_name_safe = sanitize_input(translit_input(teamA.name))
         roleteamB_name_safe = sanitize_input(translit_input(teamB.name))
-        channel_name = 'match_{}_vs_{}'.format(roleteamA_name_safe, roleteamB_name_safe)  # TODO cup
         topic = 'Match {} vs {}'.format(teamA.name, teamB.name)
 
         ref_role = self.get_special_role(server, 'referee')
@@ -514,7 +554,22 @@ class RoleKeeper:
         read_perms = discord.PermissionOverwrite(read_messages=True, send_messages=True)
         no_perms = discord.PermissionOverwrite(read_messages=False)
 
-        channel = discord.utils.get(server.channels, name=channel_name)
+        index = 1
+        index_str = ''
+        while True:
+            channel_name = 'match_{}_vs_{}{}'.format(roleteamA_name_safe, roleteamB_name_safe, index_str)  # TODO cup
+            channel = discord.utils.get(server.channels, name=channel_name)
+
+            # Channel already exists, but we do not know if we should reuse it
+            if channel and reuse == self.REUSE_UNK:
+                await self.reply(message, 'Room `{}` already exists!\nAdd `reuse` in the command to reuse the same channel or `new` to create a new one.'.format(channel_name))
+                return False
+
+            if not channel or reuse == self.REUSE_YES:
+                break
+
+            index = index + 1
+            index_str = '_r{}'.format(index)
 
         if not channel:
             try:
@@ -700,7 +755,8 @@ class RoleKeeper:
         self.db[server]['teams'].clear()
 
         # 2. Find all members with role team captain
-        for member in server.members: # TODO go through db instead
+        members = list(server.members)
+        for member in members: # TODO go through db instead
             discord_id = str(member)
             if discord_id not in self.db[server]['captains']: # TODO cup
                 continue
@@ -830,13 +886,14 @@ class RoleKeeper:
         csv = io.BytesIO()
         csv.write('#discord_id\n'.encode())
 
-        for member in server.members:
+        members = list(server.members)
+        for member in members:
             discord_id = str(member)
             csv.write('{}\n'.format(discord_id).encode())
 
         csv.seek(0)
 
-        member_count = len(server.members)
+        member_count = len(members)
         filename = 'members-{}.csv'.format(self.config['servers'][server.name]['db'])
         msg = '{mention} Here is the list of all {count} members in this Discord server'\
             .format(mention=message.author.mention,
@@ -885,7 +942,8 @@ class RoleKeeper:
                 else:
                     picked_maps[m] = 1
 
-            sides[match.chosen_side] += 1
+            for s in match.picked_sides:
+                sides[s] += 1
 
         for bm, count in banned_maps.items():
             csv.write('ban,{map},{count}\n'\
@@ -949,29 +1007,43 @@ class RoleKeeper:
         captains, groups = self.parse_teams(server, csv) # TODO cup
         csv.close()
 
+        members = list(server.members)
+
         if not checkonly:
             self.db[server]['captains'] = captains # TODO Add cup
             self.db[server]['groups'] = groups # TODO cup/ref?
 
-        await self.create_all_teams(server)
+            await self.create_all_teams(server)
 
-        # Visit all members with no role
-        for member in server.members:
-            if len(member.roles) == 1:
-                #print('- Member without role: {}'.format(member))
-                await self.handle_member_join(member)
+            # Visit all members with no role
+            for member in members:
+                if True or len(member.roles) == 1:
+                    #print('- Member without role: {}'.format(member))
+                    await self.handle_member_join(member)
 
         # Collect missing captain Discords
         missing_discords = []
         invalid_discords = []
         missing_members = []
         for captain in captains.values():
+            group_s = ', Group {}'.format(captain.group) if captain.group else ''
             if not captain.discord:
-                missing_discords.append('`{}` (Team `{}`)'.format(captain.nickname, captain.team_name))
+                missing_discords.append('`{n}` (Team `{t}`{g})'\
+                                        .format(n=captain.nickname,
+                                                t=captain.team_name,
+                                                g=group_s))
             elif not self.discord_validate(captain.discord):
-                invalid_discords.append('`{}` (Team `{}`): `{}`'.format(captain.nickname, captain.team_name, captain.discord))
-            elif not discord.utils.find(lambda m: str(m) == captain.discord, server.members):
-                missing_members.append('`{}` (Team `{}`): `{}`'.format(captain.nickname, captain.team_name, captain.discord))
+                invalid_discords.append('`{n}` (Team `{t}`{g}): `{d}`'\
+                                        .format(n=captain.nickname,
+                                                t=captain.team_name,
+                                                d=captain.discord,
+                                                g=group_s))
+            elif not discord.utils.find(lambda m: str(m) == captain.discord, members):
+                missing_members.append('`{n}` (Team `{t}`{g}): `{d}`'\
+                                       .format(n=captain.nickname,
+                                               t=captain.team_name,
+                                               d=captain.discord,
+                                               g=group_s))
 
         total = len(captains)
         report = 'Imported {count}/{total} teams'.format(

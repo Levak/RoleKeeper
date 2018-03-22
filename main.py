@@ -79,6 +79,12 @@ async def on_message(message):
     command = message.content.split()[0]
     args = message.content.replace(command, '', 1).strip()
 
+    reuse_mode = RoleKeeper.REUSE_UNK
+    if 'reuse' in args:
+        reuse_mode = RoleKeeper.REUSE_YES
+    elif 'new' in args:
+        reuse_mode = RoleKeeper.REUSE_NO
+
     ret = False
     exception = None
 
@@ -135,6 +141,26 @@ async def on_message(message):
         # REF COMMANDS
         #--------------
 
+        elif command == '!add_group' and is_ref:
+            parts = args.split()
+            if len(parts) == 1:
+                ret = await rk.add_group(message,
+                                         message.author.server,
+                                         parts[0])
+            else:
+                await rk.reply(message,
+                               'Too much or not enough arguments:\n```!add_group group```')
+
+        elif command == '!remove_group' and is_ref:
+            parts = args.split()
+            if len(parts) == 1:
+                ret = await rk.remove_group(message,
+                                            message.author.server,
+                                            parts[0])
+            else:
+                await rk.reply(message,
+                               'Too much or not enough arguments:\n```!remove_group group```')
+
         elif command == '!add_captain' and is_ref:
             parts = args.split()
             if len(message.mentions) == 1 and len(parts) >= 4:
@@ -163,7 +189,8 @@ async def on_message(message):
                                        message.author.server,
                                        message.role_mentions[0],
                                        message.role_mentions[1],
-                                       mode=RoleKeeper.MATCH_BO1)
+                                       mode=RoleKeeper.MATCH_BO1,
+                                       reuse=reuse_mode)
             else:
                 await rk.reply(message,
                                'Too much or not enough arguments:\n```!bo1 @xxx @yyy```')
@@ -174,7 +201,8 @@ async def on_message(message):
                                        message.author.server,
                                        message.role_mentions[0],
                                        message.role_mentions[1],
-                                       mode=RoleKeeper.MATCH_BO2)
+                                       mode=RoleKeeper.MATCH_BO2,
+                                       reuse=reuse_mode)
             else:
                 await rk.reply(message,
                                'Too much or not enough arguments:\n```!bo2 @xxx @yyy```')
@@ -185,7 +213,8 @@ async def on_message(message):
                                        message.author.server,
                                        message.role_mentions[0],
                                        message.role_mentions[1],
-                                       mode=RoleKeeper.MATCH_BO3)
+                                       mode=RoleKeeper.MATCH_BO3,
+                                       reuse=reuse_mode)
             else:
                 await rk.reply(message,
                                'Too much or not enough arguments:\n```!bo3 @xxx @yyy```')

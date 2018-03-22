@@ -65,6 +65,10 @@ A judge referee is a member with the role `roles/referee` defined in `config.jso
    database, assign the captain, team and group roles and rename the captain;
  - `!remove_captain @captain`, remove a captain from the captain database,
    reset its nickname, remove the assigned roles.
+ - `!add_group group`, add group to the group database. Here `group` should
+   correspond to `{}` in `roles/group` (e.g. `Group {}`). The Discord role for
+   that group has to exist;
+ - `!remove_group group`, remove a group from the group database.
  - `!ban`, `!pick` and `!side` commands (see [Team captains](#team-captains))
    are available to referees so that they can test or bridge team captains
    choice if they are not in Discord server.
@@ -83,14 +87,21 @@ A streamer is a member with the role `roles/streamer` defined in `config.json`
 An admin is a member with Discord permission `manage roles`, someone that has
 access to the `config.json` file and bot launch.
 
- - `!refresh`, will crawl the server member list again to find members without
-   any role and assign one if a team captain is found. **CAUTION**: Do not use
-   this command if someone already used `!add_captain` or `!remove_captain` as
-   it will reset captain database and forget about the new ones;
+ - `!refresh`, [DEPRECATED] will crawl the server member list again to find
+   members without any role and assign one if a team captain is
+   found. **CAUTION**: Do not use this command if someone already used
+   `!add_captain` or `!remove_captain` as it will reset captain database and
+   forget about the new ones;
  - `!create_teams`, [DEPRECATED] based on `members.csv`, creates all the team
    roles in advance (optional). This can be helpful when `members.csv` is
    incomplete and contains invalid Discord ID while teams are correct,
    allowing manual role-assigning by a referee;
+ - `!check_cup cup // CSV`, takes the attached CSV and builds a report of
+   missing members or invalid Discord IDs;
+ - `!start_cup cup // CSV`, same as `!check_cup` but actually imports the
+   captains and teams, and start assigning the roles. [TODO] Register the cup
+   to the database;
+ - `!stop_cup cup` [TODO] Unregister the cup from the database;
  - `!members`, will generate a CSV of all members in the Discord server;
  - `!stats`, will generate a CSV of pick&bans statistics;
  - `!wipe_teams`, will delete all team-captain roles known from captain
@@ -153,7 +164,7 @@ $ source ./env/bin/activate
 ...
     "servers" : {
         "My Discord server": {
-            "captains": "members.csv",
+            "db": "myserver",
             ...
         }
     },
@@ -164,7 +175,7 @@ $ source ./env/bin/activate
    from the bot app page)
 
 ```
-https://discordapp.com/oauth2/authorize?client_id=BOT_CLIENT_ID&scope=bot&permissions=402705488 
+https://discordapp.com/oauth2/authorize?client_id=BOT_CLIENT_ID&scope=bot&permissions=402705488
 ```
 
 This link should give the following permissions:
@@ -187,14 +198,25 @@ This link should give the following permissions:
 **Note**: Make sure these roles are below `RoleKeeper` role in Discord role
   list so that it can manage them.
 
-7. Create the `members.csv` file (see [Member list](#member-list) section)
+7. Run RoleKeeper
 
-8. Run RoleKeeper
 ```
 (venv) $ python ./main.py
 ```
 
-Once everything is setup, the only things to repeat are steps 7 and 8.
+8. Create a `members.csv` file (see [Member list](#member-list) section)
+
+9. Start a cup:
+
+```
+Discord
+_______________________
+Levak: !start_cup mycup
+       <members.csv>
+```
+
+
+Once everything is setup, the only things to repeat are steps 8 and 9.
 
 ## Configuration
 
@@ -220,7 +242,6 @@ Here is an example of configuration file:
     "servers": {
         "June Fast Cup": {
             "db": "jfc",
-            "captains": "members.csv",
             "maps": [ "Yard", "D-17", "Factory", "District", "Destination", "Palace", "Pyramid" ],
             "rooms": {
                 "match_created": [ "jfc_streamers" ],
@@ -229,7 +250,7 @@ Here is an example of configuration file:
         },
 
         "JFCtest": {
-            "captains": "members_test.csv",
+            "db": "jfctest",
             "maps": [ "Lorem", "Ipsum", "Dolor", "Sit", "Amet", "Consectetur", "Adipiscing" ],
             "rooms": {
                 "match_created": [ "streamers" ],
@@ -273,10 +294,6 @@ the _APP BOT TOKEN_.
 
 **String**. Name of the persistent storage DB on the disk (unique per server).
 
-### `servers/.../captains`
-
-**String**. Path to the member list file for that server.
-
 ### `servers/.../maps`
 
 **List of String**. All the available maps for the pick & ban sequences for
@@ -294,31 +311,15 @@ the _APP BOT TOKEN_.
 
 ## Member list
 
-RoleKeeper heavily relies on the `members.csv` file that contains all team
-captains Discord ID, team name, group and IGN. Based on this file, the bot is
+RoleKeeper heavily relies on `members.csv` files that contain all team
+captains Discord ID, team name, group and IGN. Based on such file, the bot is
 able to rename, create the team role, and assign it to the team captain
 whenever he joins the Discord server.
 
-The filename and location for `member.csv` are not enforced and can be changed
-in the `config.json` file. It is a per-server configuration:
+A `member.csv` file can be remotely uploaded via Discord to the bot using the
+`!check_cup` or `!start_cup` command (attach the file to the Discord message).
 
-**config.json**
-```
-...
-    "servers" : {
-        "June Fast Cup": {
-            "captains": "members.csv",
-            ...
-        },
-        "JFCtest": {
-            "captains": "members_test.csv",
-            ...
-        }
-    },
-...
-```
-
-The `members.csv` file has to be in the following format (comma separated
+A `members.csv` file has to be in the following format (comma separated
 values, `#` for comments):
 
 **members.csv**
@@ -375,10 +376,11 @@ processed and will have to be handled manually by a referee.
 - [ ] (idea) Handle match result gathering (with vote from both teams)
 - [ ] Add progress for long operations, e.g. `!refresh`, `!wipe_teams`,
   `!wipe_matches`
-- [ ] Add CSV upload instead of static memberlist.
+- [x] Add CSV upload instead of static memberlist.
 - [ ] Support multiple cups at the same time, e.g. `!start_cup x` and
   `!stop_cup x`
 - [ ] Regroup match chat rooms by categories (new Discord feature, requires
   new discord.py)
 - [x] Export pick/ban stats command, or on `!stop_cup`
 - [x] `!export_members` to export server member list
+- [ ] `!unstream x` to cancel `!stream x`.

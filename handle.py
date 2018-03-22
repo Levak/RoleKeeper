@@ -21,6 +21,7 @@
 
 import discord
 import asyncio
+import datetime
 
 class Handle:
     def __init__(self, bot, message=None, member=None, channel=None):
@@ -77,6 +78,32 @@ class Handle:
     async def edit(self, msg):
         try:
             return await self.bot.client.edit_message(self.message, msg)
+        except discord.errors.HTTPException as e:
+            print('WARNING: HTTPexception: {}'.format(str(e)))
+            await asyncio.sleep(10)
+            return await self.edit(msg)
+
+    async def embed(self, title, msg, color):
+        try:
+            embed = discord.Embed(title=title,
+                                  type='rich',
+                                  description=msg,
+                                  timestamp=datetime.datetime.now(),
+                                  color=color)
+            return await self.bot.client.send_message(self.channel, embed=embed)
+        except discord.errors.HTTPException as e:
+            print('WARNING: HTTPexception: {}'.format(str(e)))
+            await asyncio.sleep(10)
+            return await self.embed(msg)
+
+    async def edit_embed(self, title, msg, color):
+        try:
+            embed = discord.Embed(title=title,
+                                  type='rich',
+                                  description=msg,
+                                  timestamp=datetime.datetime.now(),
+                                  color=color)
+            return await self.bot.client.edit_message(self.message, embed=embed)
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))
             await asyncio.sleep(10)
