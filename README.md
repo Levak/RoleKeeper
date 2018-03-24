@@ -324,11 +324,15 @@ values, `#` for comments):
 
 **members.csv**
 ```
-#discord,team,nickname,group
+#discord,team_name,nickname,group
 ezpz#4242,Noobs,AllProsAboveMe,A
 gg#2424,Pros,xX-AtTheTop-Xx,B
 noob42#777,PGM,SixSweat,C
 ```
+
+**Note**: The first line of the members.csv file has to contain column names
+  that match the ones in the above example. That is, `discord`, `team_name`,
+  `nickname` and `group`.
 
 The above member list makes RoleKeeper wait for any server join from
 `ezpz#4242`, `gg#2424` and `noob42#777` on the Discord server he is invited
@@ -337,10 +341,6 @@ in.
 For instance, once `ezpz#4242` joins the server, he will be:
  - Renamed to `AllProsAboveMe`;
  - Assigned roles `Team Captains`, `Group A` and `Noobs team`.
-
-**Note**: Automatic role assignement is made only on members that do not have
-_any_ role.  If for some reason a member has extra roles, he will not be
-processed and will have to be handled manually by a referee.
 
 ## Recommandations
 
