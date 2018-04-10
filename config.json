@@ -1,6 +1,10 @@
 {
     "app_bot_token": "--redacted--",
 
+    "emotes": {
+        "loading": "427584607454494729"
+    },
+
     "roles": {
         "referee": "Referees",
         "captain": "Team Captains",

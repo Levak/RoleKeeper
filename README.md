@@ -374,7 +374,7 @@ For instance, once `ezpz#4242` joins the server, he will be:
 - [ ] (idea) Automatically launch `!bo1`/`!bo3` based on info from esports
   website
 - [ ] (idea) Handle match result gathering (with vote from both teams)
-- [ ] Add progress for long operations, e.g. `!refresh`, `!wipe_teams`,
+- [x] Add progress for long operations, e.g. `!refresh`, `!wipe_teams`,
   `!wipe_matches`
 - [x] Add CSV upload instead of static memberlist.
 - [ ] Support multiple cups at the same time, e.g. `!start_cup x` and

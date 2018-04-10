@@ -99,10 +99,10 @@ async def on_message(message):
             ret = await rk.create_all_teams(message.author.server)
 
         elif command == '!wipe_teams' and is_admin:
-            ret = await rk.wipe_teams(message.author.server)
+            ret = await rk.wipe_teams(message)
 
         elif command == '!wipe_matches' and is_admin:
-            ret = await rk.wipe_matches(message.author.server)
+            ret = await rk.wipe_matches(message)
 
         elif command == '!wipe_messages' and is_admin:
             if len(message.channel_mentions) < 1:

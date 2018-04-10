@@ -90,6 +90,16 @@ class RoleKeeper:
         self.client = client
         self.config = config
         self.db = {}
+        self.emotes = {}
+
+        for name in [ 'loading' ]:
+            if 'emotes' in config and name in config['emotes']:
+                self.emotes[name] = '<a:{name}:{id}>'\
+                    .format(name=name,
+                            id=config['emotes'][name])
+            else:
+                self.emotes[name] = ''
+
         atexit.register(self.atexit)
 
     def atexit(self):
@@ -735,9 +745,17 @@ class RoleKeeper:
     # 3. Remove group role from member
     # 4. Remove team captain and group roles from member
     # 5. Reset member nickname
-    async def wipe_teams(self, server):
+    async def wipe_teams(self, message):
+        server = message.server
+
         if not self.check_server(server):
             return False
+
+        count = len(self.db[server]['teams'])
+        reply = await self.reply(message,
+                                 '{l} Deleting {count} teams... (this might take a while)'\
+                                 .format(count=count,
+                                         l=self.emotes['loading']))
 
         captain_role = self.get_special_role(server, 'captain') # TODO cup, not special?
 
@@ -804,14 +822,26 @@ class RoleKeeper:
 
         self.db[server]['captains'].clear() # TODO cup
 
+        await self.client.edit_message(reply, '{mention} Deleted {count} teams.'\
+                                       .format(mention=message.author.mention,
+                                               count=count))
+
         return True
 
     # Remove all match rooms
     # 1. Find all match channels that where created by the bot for this cup
     # 2. Delete channel
-    async def wipe_matches(self, server):
+    async def wipe_matches(self, message):
+        server = message.server
+
         if not self.check_server(server):
             return False
+
+        count = len(self.db[server]['matches'])
+        reply = await self.reply(message,
+                                 '{l} Deleting {count} matches... (this might take a while)'\
+                                 .format(count=count,
+                                         l=self.emotes['loading']))
 
         for channel_name in self.db[server]['matches'].keys(): # TODO cup
             channel = discord.utils.get(server.channels, name=channel_name)
@@ -825,6 +855,10 @@ class RoleKeeper:
                            .format(channel=channel_name))
 
         self.db[server]['matches'].clear() # TODO cup
+
+        await self.client.edit_message(reply, '{mention} Deleted {count} matches.'\
+                                       .format(mention=message.author.mention,
+                                               count=count))
 
         return True
 
@@ -845,8 +879,9 @@ class RoleKeeper:
             return False
 
         reply = await self.reply(message,
-                                 'Clearing {count} message(s)... (this might take a while)'\
-                                 .format(count=count))
+                                 '{l} Clearing {count} message(s)... (this might take a while)'\
+                                 .format(count=count,
+                                         l=self.emotes['loading']))
 
         for msg in messages_to_delete:
             try:
@@ -997,6 +1032,10 @@ class RoleKeeper:
         if not self.check_server(server):
             return False
 
+        reply = await self.reply(message,
+                                 '{l} Checking members before import...'\
+                                 .format(l=self.emotes['loading']))
+
         # Fetch the CSV file and parse it
         r = requests.get(attachment['url'])
 
@@ -1061,6 +1100,7 @@ class RoleKeeper:
             report = '{}\n\n:no_entry_sign: **Invalid Discord IDs**\n - {}'.format(report, '\n - '.join(invalid_discords))
 
         await self.reply(message, report)
+        await self.client.delete_message(reply)
 
         return True
 
