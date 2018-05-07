@@ -38,7 +38,9 @@ class Handle:
 
         if self.member:
             try:
-                self.team = bot.db[self.member.server]['captains'][str(self.member)].team # TODO cup
+                db, error = bot.find_cup_db(self.member.server, str(self.member))
+                if not error:
+                    self.team = db['captains'][str(self.member)].team
             except KeyError:
                 pass
 
@@ -94,7 +96,7 @@ class Handle:
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))
             await asyncio.sleep(10)
-            return await self.embed(msg)
+            return await self.embed(title, msg, color)
 
     async def edit_embed(self, title, msg, color):
         try:
