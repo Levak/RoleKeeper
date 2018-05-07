@@ -39,8 +39,8 @@ class Match:
                           (teamA, 'ban'), (teamB, 'ban'),
                           (teamA, 'side') ]
 
-        self.sides = { 'defends': [ 'defends', 'defend', 'defense', 'defence', 'warface', 'def', 'd' ],
-                       'attacks' : [ 'attacks', 'attack', 'attacking', 'blackwood', 'offense', 'att', 'a' ] }
+        self.sides = { 'defends': [ 'defends', 'defend', 'defense', 'defence', 'warface', 'wf', 'def', 'd' ],
+                       'attacks' : [ 'attacks', 'attack', 'attacking', 'blackwood', 'offense', 'bw', 'att', 'a' ] }
 
         self.status_handle = None
         self.turn_handle = None
@@ -212,7 +212,7 @@ class Match:
                                   map1=self.picked_maps[0],
                                   side=self.picked_sides[0]))
 
-        await handle.broadcast('match_starting', ':arrow_forward: Match starting: `{match_id}`\n**{teamA}** vs **{teamB}**\n - Map: **{map1}** ({teamA} **{side}**)\n'\
+        await handle.broadcast('match_starting', ':arrow_forward: Match is ready to start: `{match_id}`\n**{teamA}** vs **{teamB}**\n - Map: **{map1}** ({teamA} **{side}**)\n'\
                                .format(teamA=self.teamA.name,
                                        teamB=self.teamB.name,
                                        map1=self.picked_maps[0],
@@ -246,7 +246,7 @@ class MatchBo2(Match):
                                   side1=self.picked_sides[0],
                                   side2=self.picked_sides[1]))
 
-        await handle.broadcast('match_starting', ':arrow_forward: Match starting: `{match_id}`\n**{teamA}** vs **{teamB}**\n - Map 1: **{map1}** ({teamB} **{side1}**)\n - Map 2: **{map2}** ({teamA} **{side2}**)\n'\
+        await handle.broadcast('match_starting', ':arrow_forward: Match is ready to start: `{match_id}`\n**{teamA}** vs **{teamB}**\n - Map 1: **{map1}** ({teamB} **{side1}**)\n - Map 2: **{map2}** ({teamA} **{side2}**)\n'\
                           .format(teamA=self.teamA.name,
                                   teamB=self.teamB.name,
                                   map1=self.picked_maps[0],
@@ -275,7 +275,7 @@ class MatchBo3(Match):
                                   side2=self.picked_sides[1],
                                   side3=self.picked_sides[2]))
 
-        await handle.broadcast('match_starting', ':arrow_forward: Match starting: `{match_id}`\n**{teamA}** vs **{teamB}**\n - Map 1: **{map1}** ({teamB} **{side1}**)\n - Map 2: **{map2}** ({teamA} **{side2}**)\n - Tie-breaker map: **{map3}** ({teamA} **{side3}**)\n'\
+        await handle.broadcast('match_starting', ':arrow_forward: Match is ready to start: `{match_id}`\n**{teamA}** vs **{teamB}**\n - Map 1: **{map1}** ({teamB} **{side1}**)\n - Map 2: **{map2}** ({teamA} **{side2}**)\n - Tie-breaker map: **{map3}** ({teamA} **{side3}**)\n'\
                           .format(teamA=self.teamA.name,
                                   teamB=self.teamB.name,
                                   map1=self.picked_maps[0],

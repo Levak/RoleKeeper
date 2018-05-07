@@ -19,8 +19,8 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-### Class that holds information about a team
-class Team:
+### Class that holds information about a role and a custom name
+class CustomRole:
     def __init__(self, name, role):
         self.name = name
         self.role = role
@@ -29,16 +29,38 @@ class Team:
         return '{name} ({role})'\
             .format(name=self.name, role=str(self.role))
 
+### Class that holds information about a cup
+class Cup(CustomRole):
+    def __init__(self, name, role):
+        CustomRole.__init__(self, name, role)
+
+### Class that holds information about a group
+class Group(CustomRole):
+    def __init__(self, name, role):
+        CustomRole.__init__(self, name, role)
+
+### Class that holds information about a team
+class Team:
+    def __init__(self, name, role):
+        CustomRole.__init__(self, name, role)
+
 ### Class that holds information about a team captain
 class TeamCaptain:
-    def __init__(self, discord, team_name, nickname, group):
+    def __init__(self, discord, team_name, nickname, group, cup):
         self.discord = discord
         self.team_name = team_name
         self.nickname = nickname
         self.group = group
+        self.cup = cup
+
+        # Team handle will be created later, once the captain is actually
+        # imported into db
         self.team = None
 
     def __str__(self):
         return '{nick} - {team} - Group {g} ({id})'\
-            .format(nick=self.nickname, team=self.team_name, id=self.discord, g=self.group)
+            .format(nick=self.nickname,
+                    team=self.team_name,
+                    id=self.discord,
+                    g=self.group.name if self.group else '')
 
