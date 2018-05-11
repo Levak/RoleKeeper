@@ -35,55 +35,6 @@ from inputs import sanitize_input, translit_input
 from db import open_db
 from handle import Handle
 
-welcome_message_bo1 =\
-"""
-Welcome {m_teamA} and {m_teamB}!
--- Match **BEST OF 1** --
-This text channel will be used by the judge and team captains to exchange anything about the match between teams {teamA} and {teamB}.
-This sequence is made using the `!ban` command team by team until one remains.
-Last team to ban also needs to chose the side they will play on using `!side xxxx` (attack or defend).
-
- - {teamA} bans, {teamB} bans,
- - {teamA} bans, {teamB} bans,
- - {teamA} bans, {teamB} bans,
- - Last map remaining is the map to play,
- - {teamA} picks the side (attack or defense).
-
-For instance, team A types `!ban Pyramid` which will then ban the map _Pyramid_ from the match, team B types `!ban d17` which will ban the map D-17, and so on, until only one map remains. team A then picks the side using `!side attack`.
-"""
-
-welcome_message_bo2 =\
-"""
-Welcome {m_teamA} and {m_teamB}!
--- Match **BEST OF 2** --
-This text channel will be used by the judge and team captains to exchange anything about the match between teams {teamA} and {teamB}.
-This sequence is made using the `!pick`, `!ban` and `!side` commands one by one using the following order:
-
- - {teamA} bans, {teamB} bans,
- - {teamA} picks, {teamB} picks,
- - {teamB} picks the side for first map (attack or defense).
- - {teamA} picks the side for second.
-
-For instance, team A types `!ban Yard` which will then ban the map _Yard_ from the match, team B types `!ban d17` which will ban the map D-17. team A would then type `!pick Destination`, picking the first map and so on, until only one map remains, which will be the tie-breaker map. team B then picks the side using `!side attack`.
-"""
-
-welcome_message_bo3 =\
-"""
-Welcome {m_teamA} and {m_teamB}!
--- Match **BEST OF 3** --
-This text channel will be used by the judge and team captains to exchange anything about the match between teams {teamA} and {teamB}.
-This sequence is made using the `!pick`, `!ban` and `!side` commands one by one using the following order:
-
- - {teamA} bans, {teamB} bans,
- - {teamA} picks, {teamB} picks,
- - {teamA} bans, {teamB} bans,
- - Last map remaining is the draw map,
- - {teamB} picks the side for first map (attack or defense).
- - {teamA} picks the side for second and tie breaker map.
-
-For instance, team A types `!ban Yard` which will then ban the map _Yard_ from the match, team B types `!ban d17` which will ban the map D-17. team A would then type `!pick Destination`, picking the first map and so on, until only one map remains, which will be the tie-breaker map. team B then picks the side using `!side attack`.
-"""
-
 import atexit
 
 class RoleKeeper:
@@ -644,19 +595,24 @@ class RoleKeeper:
                    .format(id=discord_id, nick=nickname))
             pass
 
-    # Reply to a message in a channel
-    async def reply(self, message, reply):
-        msg = '{} {}'.format(message.author.mention, reply)
-
+    # Send a message in a channel
+    async def send(self, channel, msg):
         acc = ''
         for l in msg.splitlines():
             if len(acc) + len(l) >= 2000:
-                await self.client.send_message(message.channel, acc)
+                await self.client.send_message(channel, acc)
                 acc = l
             else:
                 acc = '{}\n{}'.format(acc, l)
 
-        return await self.client.send_message(message.channel, acc)
+        return await self.client.send_message(channel, acc)
+
+
+    # Reply to a message in a channel
+    async def reply(self, message, reply):
+        msg = '{} {}'.format(message.author.mention, reply)
+
+        return await self.send(message.channel, msg)
 
     async def embed(self, message, title, body, error=False):
         color = 0x992d22 if error else 0x2ecc71
@@ -730,6 +686,17 @@ class RoleKeeper:
             await self.reply(message, 'Role "{}" is not a known team'.format(notfound))
             return False
 
+        # Create the match
+        maps = db['cup'].maps
+
+        if mode == self.MATCH_BO3:
+            match = MatchBo3(teamA, teamB, maps)
+        elif mode == self.MATCH_BO2:
+            match = MatchBo2(teamA, teamB, maps)
+        else:
+            match = Match(teamA, teamB, maps)
+
+        # Create the text channel
         roleteamA_name_safe = sanitize_input(translit_input(teamA.name))
         roleteamB_name_safe = sanitize_input(translit_input(teamB.name))
         topic = 'Match {} vs {}'.format(teamA.name, teamB.name)
@@ -796,27 +763,9 @@ class RoleKeeper:
             print('Reusing existing channel "<{channel}>"'\
                   .format(channel=channel.name))
 
-        maps = self.config['servers'][server.name]['maps']
-
-        if mode == self.MATCH_BO3:
-            match = MatchBo3(teamA, teamB, maps)
-            template = welcome_message_bo3
-        elif mode == self.MATCH_BO2:
-            match = MatchBo2(teamA, teamB, maps)
-            template = welcome_message_bo2
-        else:
-            match = Match(teamA, teamB, maps)
-            template = welcome_message_bo1
-
+        # Start the match
         db['matches'][channel_name] = match
         handle = Handle(self, channel=channel)
-        msg = template.format(m_teamA=roleteamA.mention,
-                              m_teamB=roleteamB.mention,
-                              teamA=teamA.name,
-                              teamB=teamB.name,
-                              maps='\n'.join([ ' - {}'.format(m) for m in maps ]))
-
-        await self.client.send_message(channel, msg)
         await match.begin(handle)
 
         return True
@@ -894,6 +843,24 @@ class RoleKeeper:
 
         handle = Handle(self, message=message)
         return await db['matches'][channel.name].choose_side(handle, side_safe, force)
+
+    # Undo action
+    async def undo_map(self, message):
+        server = message.author.server
+        channel = message.channel
+
+        if not self.check_server(server):
+            return False
+
+        db, error = self.find_cup_db(server, match=channel.name)
+        if error:
+            return False
+
+        if channel.name not in db['matches']:
+            return False
+
+        handle = Handle(self, message=message)
+        return await db['matches'][channel.name].undo_map(handle)
 
     # Broadcast information that the match is or will be streamed
     # 1. Notify captains match will be streamed
@@ -1263,6 +1230,21 @@ class RoleKeeper:
             and not did.startswith('#') \
             and re.match('^.*[^ ]#[0-9]+$', did)
 
+    def fetch_text_attachment(self, attachment):
+        if attachment and 'url' in attachment:
+            r = requests.get(attachment['url'])
+            enc = r.encoding
+
+            print(enc) # TODO Check UTF8 / ISO problems
+
+            # If the file uses UTF-8 with BOM (wink wink Excel) then this will
+            # skip the header, otherwise, it will treat the document as UTF-8
+            r.encoding = 'utf-8-sig'
+
+            return r.text
+        else:
+            return None
+
     # Check a CSV file before launching a cup
     # 1. Parse the CSV file
     # 2. For all parsed captains:
@@ -1284,12 +1266,12 @@ class RoleKeeper:
 
         if attachment:
             # Fetch the CSV file and parse it
-            r = requests.get(attachment['url'])
+            csv = self.fetch_text_attachment(attachment)
 
-            print(r.encoding) # TODO Check UTF8 / ISO problems
-            r.encoding = 'utf-8'
+            if not csv:
+                return False
 
-            csv = io.StringIO(r.text)
+            csv = io.StringIO(csv)
             captains, groups = self.parse_teams(server, csv, None)
             csv.close()
 
@@ -1397,7 +1379,7 @@ class RoleKeeper:
         return True
 
     # Start a cup
-    async def start_cup(self, message, cup_name, attachment):
+    async def start_cup(self, message, cup_name, attachment, selected_maps_key=None):
         server = message.server
 
         if not self.check_server(server):
@@ -1406,14 +1388,33 @@ class RoleKeeper:
         cup_role_name = self.get_role_name('captain', arg=cup_name)
         role_color = self.get_role_color('captain')
         cup_role = await self.get_or_create_role(server, cup_role_name, color=role_color)
-        cup = Cup(cup_name, cup_role)
+
+        # Backward compatibility
+        if 'default_maps' not in self.config['servers'][server.name] and not selected_maps_key:
+            if 'maps' in self.config['servers'][server.name]:
+                maps = self.config['servers'][server.name]['maps']
+            else:
+                await self.reply(message, 'Missing map pool configuration')
+                return False
+
+        # New format
+        else:
+            if not selected_maps_key:
+                selected_maps_key = self.config['servers'][server.name]['default_maps'];
+
+            if selected_maps_key not in self.config['maps']:
+                await self.reply(message, 'Unknown map pool key: {}'.format(selected_maps_key))
+                return False
+
+            maps = self.config['maps'][selected_maps_key]
+
+        cup = Cup(cup_name, cup_role, maps)
 
         self.open_cup_db(server, cup)
 
         if not await self.check_cup(message, cup_name, attachment, checkonly=False):
             return False
 
-        # TODO do actual things for the cup
         return True
 
     # List active cups
@@ -1461,5 +1462,4 @@ class RoleKeeper:
             await self.reply(message, 'No such cup')
             return False
 
-        # TODO do actual things when closing the cup
         return True

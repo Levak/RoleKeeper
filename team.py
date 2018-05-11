@@ -31,8 +31,9 @@ class CustomRole:
 
 ### Class that holds information about a cup
 class Cup(CustomRole):
-    def __init__(self, name, role):
+    def __init__(self, name, role, maps):
         CustomRole.__init__(self, name, role)
+        self.maps = maps
 
 ### Class that holds information about a group
 class Group(CustomRole):

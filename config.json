@@ -13,10 +13,30 @@
         "team": { "name": "{} team", "color": "orange" }
     },
 
+    "maps": {
+        "ptb_oc": [ "D-17", "District", "Destination", "Bridges", "Palace", "Pyramid", "Yard" ],
+        "ctf": [ "Quarry", "Breach", "Construction", "Deposit", "Longway" ],
+        "ptb": [ "Yard", "D-17", "District", "Destination", "Bridges", "Palace", "Pyramid" ],
+        "ctf_ptb": [ "Yard", "D-17", "Factory", "District", "Destination", "Bridges", "Palace", "Pyramid",
+                     "Quarry", "Breach", "Construction", "Deposit", "Longway" ],
+
+        "test2": [ "A", "B" ],
+        "test3": [ "A", "B", "C" ],
+        "test4": [ "A", "B", "C", "D" ],
+        "test5": [ "A", "B", "C", "D", "E" ],
+        "test6": [ "A", "B", "C", "D", "E", "F" ],
+        "test7": [ "A", "B", "C", "D", "E", "F", "G" ],
+        "test8": [ "A", "B", "C", "D", "E", "F", "G", "H" ],
+        "test9": [ "A", "B", "C", "D", "E", "F", "G", "H", "I" ],
+        "test10": [ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J" ],
+
+        "test": [ "Lorem", "Ipsum", "Dolor", "Sit", "Amet", "Consectetur", "Adipiscing" ]
+    },
+
     "servers": {
         "RoleKeeperTestSuite": {
             "db": "test",
-            "maps": [ "Lorem", "Ipsum", "Dolor", "Sit", "Amet", "Consectetur", "Adipiscing" ],
+            "default_maps": "test",
             "rooms": {
                 "match_created": [ "streamers" ],
                 "match_starting": [ "referees", "streamers" ],
@@ -31,7 +51,7 @@
 
         "WFesports": {
             "db": "mycom",
-            "maps": [ "D-17", "District", "Destination", "Bridges", "Palace", "Pyramid", "Yard" ],
+            "default_maps": "ptb_oc",
             "rooms": {
                 "match_created": [ "streamers" ],
                 "match_starting": [ "int_results", "streamers" ],

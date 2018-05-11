@@ -140,7 +140,7 @@ async def on_message(message):
     is_admin = message.author.server_permissions.manage_roles
     is_ref = discord.utils.get(message.author.roles, name=rk.config['roles']['referee']['name']) or is_admin
     is_captain_in_match = rk.is_captain_in_match(message.author, message.channel) or is_admin or is_ref
-    is_streamer = discord.utils.get(message.author.roles, name=rk.config['roles']['streamer']['name']) or is_admin
+    is_streamer = discord.utils.get(message.author.roles, name=rk.config['roles']['streamer']['name']) or is_ref
 
     if len(message.content) <= 0:
         return
@@ -194,10 +194,11 @@ async def on_message(message):
             if len(parts) > 0:
                 ret = await rk.start_cup(message,
                                          parts[0],
-                                         message.attachments[0] if len(message.attachments) > 0 else None)
+                                         message.attachments[0] if len(message.attachments) > 0 else None,
+                                         selected_maps_key=parts[1] if len(parts) > 1 else None)
             else:
                 await rk.reply(message,
-                               'Too much or not enough arguments:\n```!start_cup name // TEAMS.csv```')
+                               'Too much or not enough arguments:\n```!start_cup name [maps_key] [// TEAMS.csv]```')
 
         elif command == '!check_cup' and is_admin:
             if len(parts) > 0:
@@ -206,7 +207,7 @@ async def on_message(message):
                                          message.attachments[0] if len(message.attachments) > 0 else None)
             else:
                 await rk.reply(message,
-                               'Too much or not enough arguments:\n```!check_cup name // TEAMS.csv```')
+                               'Too much or not enough arguments:\n```!check_cup name [// TEAMS.csv]```')
 
         elif command == '!stop_cup' and is_admin:
             if len(parts) > 0:
@@ -325,8 +326,12 @@ async def on_message(message):
                 await rk.reply(message,
                                'Too much or not enough arguments:\n```!bo3 @xxx @yyy [>category] [cup] [new/reuse]```')
 
+
+        elif command == '!undo' and is_ref:
+            ret = await rk.undo_map(message)
+
         elif command == '!say' and is_ref:
-            if len(parts) > 1:
+            if len(parts) > 1 or (len(parts) == 1 and len(message.attachments) > 0):
                 channel_id = parts[0]
                 if channel_id.startswith('<'):
                     channel_id = channel_id[2:-1]
@@ -337,7 +342,14 @@ async def on_message(message):
                 if channel:
                     msg = args.replace(parts[0], '', 1)
                     try:
-                        await rk.client.send_message(channel, msg)
+                        if len(message.attachments) > 0:
+                            for attachment in message.attachments:
+                                attach = rk.fetch_text_attachment(attachment)
+                                if attach:
+                                    await rk.send(channel, attach)
+                        else:
+                            await rk.send(channel, msg)
+
                         ret = True
                     except:
                         await rk.reply(message,

@@ -85,13 +85,16 @@ class Handle:
             await asyncio.sleep(10)
             return await self.edit(msg)
 
-    async def embed(self, title, msg, color):
+    async def embed(self, title, msg, color, fields=[]):
         try:
             embed = discord.Embed(title=title,
                                   type='rich',
                                   description=msg,
                                   timestamp=datetime.datetime.now(),
                                   color=color)
+            for field in fields:
+                embed.add_field(name=field['name'], value=field['value'], inline=False)
+
             return await self.bot.client.send_message(self.channel, embed=embed)
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))

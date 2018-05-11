@@ -44,7 +44,7 @@ A Team captain is a member imported using the `!add_captain` or `!start_cup` com
 
 ### Referees commands
 
-A judge referee is a member with the role `roles/referee` defined in `config.json`
+A judge referee is a member with the role [`roles/referee`](#rolesreferee)
 
  - `!say #channel message...`, makes the bot say `message...` in `channel`. Note
    that `channel` has to be a valid chat-channel mention;
@@ -52,20 +52,20 @@ A judge referee is a member with the role `roles/referee` defined in `config.jso
    be **existing** Discord role mentions);
    1. Creates a chat room named `match_teamA_vs_teamB` (with transliteration);
    2. If `>cat` is given, creates the channel in the `cat` channel category
-      where `cat` has to be given in `servers/.../categories/` (`config.json`);
+      where `cat` has to be given in [`servers/.../categories/`](#serverscategories);
    3. Broadcast the fact the channel was created in rooms
-      `servers/.../rooms/match_created` defined in `config.json`;
+      [`servers/.../rooms/match_created`](#serversroomsmatch_created);
    4. Gives permissions to `teamA` and `teamB` roles to write in the
       chat room;
    5. Starts a best-of-1 map pick & ban sequence (6xban, 7th is a pick, side);
    6. Team captains are invited to type `!ban map`, `!pick map` or `!side
       side` one after the other;
    7. Prints the summary of elected maps and sides;
-   8. Broadcast the results in rooms `servers/.../rooms/match_starting`
-      defined in `config.json`.
+   8. Broadcast the results in rooms
+   [`servers/.../rooms/match_starting`](#serversroomsmatch_starting).
    Note: When a match already exists for the 2 teams, the bot will ask to
-      either add `reuse` or `new` in the command. Otherwise, these arguments
-      should never be given to avoid mistakes.
+   either add `reuse` or `new` in the command. Otherwise, these arguments
+   should never be given to avoid mistakes.
  - `!bo2 @teamA @teamB ...`, same as `!bo1` excepts it creates a best-of-2 chat
    channel (ban, ban, pick, pick, side);
  - `!bo3 @teamA @teamB ...`, same as `!bo1` excepts it creates a best-of-3 chat
@@ -76,29 +76,31 @@ A judge referee is a member with the role `roles/referee` defined in `config.jso
    is mandatory, but if no group is required, use `-` (dash);
  - `!remove_captain @captain [cup]`, remove a captain from the captain
    database (for cup `cup`), reset its nickname, remove the assigned roles.
- - `!add_group group [cup]`, add group to the group database. Here `group` should
-   correspond to `{}` in `roles/group` (e.g. `Group {}`). The Discord role for
-   that group has to exist;
+ - `!add_group group [cup]`, add group to the group database. Here `group`
+   should correspond to `{}` in [`roles/group`](#rolesgroup) (e.g. `Group
+   {}`). The Discord role for that group has to exist;
  - `!remove_group group [cup]`, remove a group from the group database.
- - `!ban`, `!pick` and `!side` commands (see [Team captains](#team-captains))
+ - `!ban`, `!pick` and `!side` commands (see [Team captains](#team-captains-commands))
    are available to referees so that they can test or bridge team captains
-   choice if they are not in Discord server.
+   choice if they are not in Discord server;
+ - `!undo`, to go back 1 step in the pick & ban sequence.
 
 **Note**: The `cup` argument is optional if there is only 1 cup running. Else it
 is mandatory.
 
 ### Streamers commands
 
-A streamer is a member with the role `roles/streamer` defined in `config.json`
+A streamer is a member with the role [`roles/streamer`](#rolesstreamer)
 
  - `!stream match_id [@streamer]`, will broadcast the information that
    `match_id` will be streamed by the one executing the command. Rolekeeper
-   provides `match_id` to channels `servers/[server]/rooms/match_created`
-   which streamers should have access to. The bot will also give visibility
-   (read only) to the streamer on the match room if
-   `servers/.../streamers_can_see_match` (`config.json`) is `true`. If the
-   optional `@streamer` argument is given (_valid Discord mention_) then it
-   will be used in place of the command author.
+   provides `match_id` to channels
+   [`servers/.../rooms/match_created`](#serversroomsmatch_created) which
+   streamers should have access to. The bot will also give visibility (read
+   only) to the streamer on the match room if
+   [`servers/.../streamer_can_see_match`](#serversstreamer_can_see_match) is
+   `true`. If the optional `@streamer` argument is given (_valid Discord
+   mention_) then it will be used in place of the command author.
 
 ### Admins commands
 
@@ -109,10 +111,12 @@ access to the `config.json` file and bot launch.
    missing members or invalid Discord IDs. If the command was already used and
    we just want to run the check with the same database, the attached file is
    optional;
- - `!start_cup cup [// CSV]`, same as `!check_cup` but actually imports the
-   captains and teams, and start assigning the roles. Same as `!check_cup`, if
-   there was already a CSV given to check, the attached CSV file is
-   optional. Once `!start_cup` is used, the scratchpad is emptied;
+ - `!start_cup cup [maps_key] [// CSV]`, same as `!check_cup` but actually imports
+   the captains and teams, and start assigning the roles. Same as
+   `!check_cup`, if there was already a CSV given to check, the attached CSV
+   file is optional. Once `!start_cup` is used, the scratchpad is emptied. If
+   `maps_key` is given, use this one as the map pool key instead of the
+   default one for the server;
  - `!stop_cup cup`, wipes out teams, captains and matches, then unregisters
    the cup from the database;
  - `!members`, will generate a CSV of all members in the Discord server;
@@ -200,8 +204,8 @@ This link should give the following permissions:
 
 6. Create the mandatory roles in the Discord server (names can be changed
    in `config.json`):
- - `Referees`;
- - `Streamers`.
+ - [`Referees`](#rolesreferee);
+ - [`Streamers`](#rolesstreamer).
 
 **Note**: Make sure these roles are below `RoleKeeper` role in Discord role
   list so that it can manage them.
@@ -265,10 +269,15 @@ Here is an example of configuration file:
         "team": { "name": "{} team", "color": "orange" }
     },
 
+    "maps": {
+        "ptb": [ "Yard", "D-17", "Factory", "District", "Destination", "Palace", "Pyramid" ],
+        "test": [ "Lorem", "Ipsum", "Dolor", "Sit", "Amet", "Consectetur", "Adipiscing" ]
+    },
+
     "servers": {
         "June Fast Cup": {
             "db": "jfc",
-            "maps": [ "Yard", "D-17", "Factory", "District", "Destination", "Palace", "Pyramid" ],
+            "default_maps": "ptb",
             "rooms": {
                 "match_created": [ "jfc_streamers" ],
                 "match_starting": [ "bot_referees", "jfc_streamers" ]
@@ -282,7 +291,7 @@ Here is an example of configuration file:
 
         "JFCtest": {
             "db": "jfctest",
-            "maps": [ "Lorem", "Ipsum", "Dolor", "Sit", "Amet", "Consectetur", "Adipiscing" ],
+            "default_maps": "test",
             "rooms": {
                 "match_created": [ "streamers" ],
                 "match_starting": [ "referees", "streamers" ]
@@ -341,14 +350,20 @@ the _APP BOT TOKEN_.
 
 **Role**. Role used for the Team names. Formatted with the team name.
 
+### `maps/...`
+
+**Dict of List of String**. All the available maps for the pick & ban
+  sequences indexed by "key". May contain any number of maps per key. "key" is
+  used to reference a map pool in `!start_cup` and in
+  [`servers/.../default_maps`](#serversdefault_maps).
+
 ### `servers/.../db`
 
 **String**. Name of the persistent storage DB on the disk (unique per server).
 
-### `servers/.../maps`
+### `servers/.../default_maps`
 
-**List of String**. All the available maps for the pick & ban sequences for
-  that server. Must contain exactly 7 elements.
+**String**. Key referencing the map pool defined in [`maps/...`](#maps).
 
 ### `servers/.../rooms/match_created`
 
@@ -469,3 +484,5 @@ unable to pick or ban maps.
 - [x] Export pick/ban stats command, or on `!stop_cup`
 - [x] `!export_members` to export server member list
 - [ ] `!unstream x` to cancel `!stream x`.
+- [x] `!undo` to undo a `!ban` or `!pick`
+- [x] unlimited and dynamid map pools instead of just 7 maps
