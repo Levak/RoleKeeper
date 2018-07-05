@@ -38,11 +38,60 @@ class Handle:
 
         if self.member:
             try:
-                db, error = bot.find_cup_db(self.member.server, str(self.member))
+                db, error = bot.find_cup_db(self.member.server, captain=str(self.member))
                 if not error:
                     self.team = db['captains'][str(self.member)].team
             except KeyError:
                 pass
+
+    ## Override pickle serialization
+    def __getstate__(self):
+        state = dict(self.__dict__)
+
+        # We cannot serialize Discord.Message because of WeakSet
+        # thus, remove them
+
+        state['bot'] = None
+
+        state['_msg_ch'] = self.message.channel.id \
+                           if self.message \
+                              and self.message.channel \
+                              else self.channel.id \
+                                   if self.channel else None
+
+        state['_msg_id'] = self.message.id \
+                           if self.message else None
+
+        state['_msg_am'] = self.message.author.id \
+                           if  self.message \
+                               and self.message.author \
+                               else self.member.id \
+                                    if self.member else None
+
+        state['message'] = None
+        state['member'] = None
+        state['channel'] = None
+        state['team'] = None
+
+        return state
+
+    ## Once the bot is ready, restore the message
+    async def resume(self, server, bot):
+        channel = discord.utils.get(server.channels, id=self._msg_ch) \
+                  if self._msg_ch else None
+        try:
+            message = await bot.client.get_message(channel, self._msg_id) \
+                      if channel and self._msg_id else None
+        except:
+            message = None
+        member = discord.utils.get(server.members, id=self._msg_am) \
+                 if self._msg_am else None
+
+        if message:
+            self.__init__(bot, message=message)
+        elif channel and member:
+            self.__init__(bot, channel=channel, member=member)
+
 
     def clone(self):
         h = Handle(self.bot)
@@ -58,7 +107,7 @@ class Handle:
         else:
             return await self.send(msg)
 
-    async def react(self, reaction):
+    async def react(self, reaction, err_count=0):
         if not self.message:
             return None
 
@@ -66,31 +115,40 @@ class Handle:
             return await self.bot.client.add_reaction(self.message, reaction)
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))
+            err_count += 1
+            if err_count > 5:
+                return
             await asyncio.sleep(10)
-            return await self.react(reaction)
+            return await self.react(reaction, err_count=err_count)
 
-    async def send(self, msg):
+    async def send(self, msg, err_count=0):
         try:
             return await self.bot.client.send_message(self.channel, msg)
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))
+            err_count += 1
+            if err_count > 5:
+                return
             await asyncio.sleep(10)
-            return await self.send(msg)
+            return await self.send(msg, err_count=err_count)
 
-    async def edit(self, msg):
+    async def edit(self, msg, err_count=0):
         try:
             return await self.bot.client.edit_message(self.message, msg)
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))
+            err_count += 1
+            if err_count > 5:
+                return
             await asyncio.sleep(10)
-            return await self.edit(msg)
+            return await self.edit(msg, err_count=err_count)
 
-    async def embed(self, title, msg, color, fields=[]):
+    async def embed(self, title, msg, color, fields=[], err_count=0):
         try:
             embed = discord.Embed(title=title,
                                   type='rich',
                                   description=msg,
-                                  timestamp=datetime.datetime.now(),
+                                  timestamp=datetime.datetime.utcnow(),
                                   color=color)
             for field in fields:
                 embed.add_field(name=field['name'], value=field['value'], inline=False)
@@ -98,31 +156,46 @@ class Handle:
             return await self.bot.client.send_message(self.channel, embed=embed)
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))
+            err_count += 1
+            if err_count > 5:
+                return
             await asyncio.sleep(10)
-            return await self.embed(title, msg, color)
+            return await self.embed(title, msg, color, fields=fields, err_count=err_count)
 
-    async def edit_embed(self, title, msg, color):
+    async def edit_embed(self, title, msg, color, fields=[], err_count=0):
         try:
             embed = discord.Embed(title=title,
                                   type='rich',
                                   description=msg,
-                                  timestamp=datetime.datetime.now(),
+                                  timestamp=datetime.datetime.utcnow(),
                                   color=color)
+            for field in fields:
+                embed.add_field(name=field['name'], value=field['value'], inline=False)
+
             return await self.bot.client.edit_message(self.message, embed=embed)
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))
+            err_count += 1
+            if err_count > 5:
+                return
             await asyncio.sleep(10)
-            return await self.edit(msg)
+            return await self.edit_embed(title, msg, color, fields=fields, err_count=err_count)
 
-    async def delete(self):
+    async def delete(self, err_count=0):
         try:
             return await self.bot.client.delete_message(self.message)
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))
+            err_count += 1
+            if err_count > 5:
+                return
             await asyncio.sleep(10)
-            return await self.delete()
+            return await self.delete(err_count=err_count)
 
     async def broadcast(self, bcast_id, msg):
+        if not self.bot.is_broadcast_enabled(self.channel.server):
+            return
+
         channels = []
         try:
             channels = self.bot.config['servers'][self.channel.server.name]['rooms'][bcast_id]

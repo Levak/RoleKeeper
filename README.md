@@ -34,10 +34,13 @@ followed by the command name, a space and then the command arguments.
 A Team captain is a member imported using the `!add_captain` or `!start_cup` commands.
 
  - `!ban map`, bans map `map` from the map list available in the pick & ban
-   sequence. `map` is case-insensitively matched at 80% with available maps;
+   sequence. `map` is case-insensitively matched at 80% with available maps. A
+   shortcut `-` is available (e.g. `-pyramid` to ban map `Pyramid`);
  - `!pick map`, same as `!ban` excepts it is used to pick a map (best-of-3
-   only);
- - `!side side`, chooses the side, either attack or defense.
+   only). A shortcut `+` is available (e.g. `+d17` to pick map `D17`);
+ - `!side side`, chooses the side, either attack or defense. A shortcut `=` is
+   available (e.g. `=wf` to take Warface side). There is also `!defend` and
+   `!attack` as shortcuts.
 
 **Note**: The above commands are only available in a match chat channel
   created by the bot itself.
@@ -47,9 +50,10 @@ A Team captain is a member imported using the `!add_captain` or `!start_cup` com
 A judge referee is a member with the role [`roles/referee`](#rolesreferee)
 
  - `!say #channel message...`, makes the bot say `message...` in `channel`. Note
-   that `channel` has to be a valid chat-channel mention;
+   that `channel` has to be a valid chat-channel mention. If no `message...`
+   is given, one can attach a file;
  - `!bo1 @teamA @teamB [>cat] [cup] [new/reuse]` (Both first arguments have to
-   be **existing** Discord role mentions);
+   be **existing** Discord role mentions, team names or Discord captain mention);
    1. Creates a chat room named `match_teamA_vs_teamB` (with transliteration);
    2. If `>cat` is given, creates the channel in the `cat` channel category
       where `cat` has to be given in [`servers/.../categories/`](#serverscategories);
@@ -74,6 +78,8 @@ A judge referee is a member with the role [`roles/referee`](#rolesreferee)
    captain database (for cup `cup`), assign the captain, team and group roles
    and rename the captain to the one defined in the CSV file. Argument `group`
    is mandatory, but if no group is required, use `-` (dash);
+ - `!update_captain @captain nickname [cup]`, updates a captain discord ID
+   using his nickname as a lookup in the database;
  - `!remove_captain @captain [cup]`, remove a captain from the captain
    database (for cup `cup`), reset its nickname, remove the assigned roles.
  - `!add_group group [cup]`, add group to the group database. Here `group`
@@ -83,7 +89,8 @@ A judge referee is a member with the role [`roles/referee`](#rolesreferee)
  - `!ban`, `!pick` and `!side` commands (see [Team captains](#team-captains-commands))
    are available to referees so that they can test or bridge team captains
    choice if they are not in Discord server;
- - `!undo`, to go back 1 step in the pick & ban sequence.
+ - `!undo`, to go back 1 step in the pick & ban sequence;
+ - `!close`, to close a pick & ban sequence (can be reopenned with `!undo`).
 
 **Note**: The `cup` argument is optional if there is only 1 cup running. Else it
 is mandatory.
@@ -119,9 +126,23 @@ access to the `config.json` file and bot launch.
    default one for the server;
  - `!stop_cup cup`, wipes out teams, captains and matches, then unregisters
    the cup from the database;
+ - `!start_hunt cup [#channel]`, to use a channel as an automatic
+   `!update_captain` one: Each captain can write their team name or registered
+   nickname and the bot will automatically use it to update the captain
+   discord;
+ - `!check_captain @captain`, to check if a captain is recognized as a captain
+   by the bot;
+ - `!update_cup cup // CSV`, to bulk update groups/discords;
+ - `!stop_hunt cup`, to stop from seeing the channel as a captain hunt;
+ - `!broadcast on/off`, to enable broadcast notifications globally;
+ - `!reconfig`, to reload the configuration file without restarting the bot;
  - `!members`, will generate a CSV of all members in the Discord server;
+ - `!captains [cup]`, will generate a CSV of all captains in a format that is
+   compatible with `!start_cup`;
  - `!stats [cup]`, will generate a CSV of pick&bans statistics;
- - `!wipe_matches [cup]`, will remove all match chat channels created;
+ - `!wipe_matches all/rooms/finished [cup]`, will either remove all match chat
+   channels created from DB and Discord (`all`), all but only from Discord
+   (`rooms`) or only from Discord the ones that are finished (`finished`) ;
  - `!wipe_messages #channel`, will remove all non-pinned messages in
    `channel`. Note that `channel` has to be a valid chat-channel mention.
 
@@ -455,6 +476,43 @@ unable to pick or ban maps.
   read/send messages. When the groups merge, referees can manually assign
   the new group role to the affected team captains.
 
+
+## Esports driver
+
+Driver specific to https://esports.mail.ru and https://esports.my.com to
+automatically start pick & ban rooms based on available matches.
+
+### Handling
+
+#### Admin commands
+
+ - `!sync_cup cup http://cup_url [>cat]`, to start the synchronisation;
+ - `!desync_cup cup`, to stop the synchronization.
+
+### Configuration
+
+The following fields are added into the configuration file:
+
+```
+  "driver": {
+    "refresh_period": 60,
+    "max_advance": 3600,
+    "utc_offset": 0
+  },
+```
+
+#### `driver/refresh_period`
+
+**Integer**. Refresh rate of the driver in seconds.
+
+#### `driver/max_advance`
+
+**Integer**. Maximum advance to take before creating a match.
+
+#### `driver/utc_offset`
+
+**Integer**. Offset in hours of the parsed times.
+
 ## TODO
 
 - [x] Reparse `members.csv` or provide a more dynamic way of adding team
@@ -471,7 +529,7 @@ unable to pick or ban maps.
 - [x] Add `!wipe_match_rooms` for admin to remove all match chat rooms.
 - [x] Add `!wipe_team_roles` for admin to remove all team captain roles.
 - [ ] (idea) Import `members.csv` directly from esports website
-- [ ] (idea) Automatically launch `!bo1`/`!bo3` based on info from esports
+- [x] (idea) Automatically launch `!bo1`/`!bo3` based on info from esports
   website
 - [ ] (idea) Handle match result gathering (with vote from both teams)
 - [x] Add progress for long operations, e.g. `!refresh`, `!wipe_teams`,
