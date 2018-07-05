@@ -31,3 +31,20 @@ def translit_input(input):
         return transliterate.translit(input, reversed=True)
     except:
         return input
+
+## When ` in input, use ``, count = 1, mod 2 = 1
+## When `` in input, use `, count = 2, mod 2 = 0
+def md_inline_code(input):
+    if input.count('`') % 2 == 0:
+        return '`{}`'.format(input)
+    else:
+        return '``{}``'.format(input)
+
+def md_bold(input):
+    return '**{}**'.format(input.replace('_', '\\_'))
+
+def md_normal(input):
+    return '{}'.format(input.replace('_', '\\_'))
+
+def md_italic(input):
+    return '_{}_'.format(input.replace('_', '\\_'))

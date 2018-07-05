@@ -22,7 +22,7 @@
 import asyncio
 
 from difflib import SequenceMatcher
-from inputs import sanitize_input, translit_input
+from inputs import *
 
 bo1_title = 'BEST OF 1'
 bo1_welcome_message =\
@@ -34,6 +34,7 @@ This text channel will be used by the judge and team captains to exchange anythi
 The ban sequence is made using the `!ban` command team by team until one remains. Last team to ban also needs to chose the side they will play on using `!side xxxx` (attack or defend).
 
 For instance, team A types `!ban Pyramid` which will then ban the map _Pyramid_ from the match, team B types `!ban d17` which will ban the map D-17, and so on, until only one map remains. team A then picks the side using `!side attack`.
+{match_result_upload}
 """
 
 bo2_title = 'BEST OF 2'
@@ -46,6 +47,7 @@ This text channel will be used by the judge and team captains to exchange anythi
 The pick&ban sequence is made using the `!pick`, `!ban` and `!side` commands one by one using the order defined below.
 
 For instance, team A types `!ban Yard` which will then ban the map _Yard_ from the match, team B types `!ban d17` which will ban the map D-17. team A would then type `!pick Destination`, picking the first map and so on, until only one map remains, which will be the tie-breaker map. team B then picks the side using `!side attack`.
+{match_result_upload}
 """
 
 bo3_title = 'BEST OF 3'
@@ -58,6 +60,17 @@ This text channel will be used by the judge and team captains to exchange anythi
 The pick&ban sequence is made using the `!pick`, `!ban` and `!side` commands one by one using the order defined below.
 
 For instance, team A types `!ban Yard` which will then ban the map _Yard_ from the match, team B types `!ban d17` which will ban the map D-17. team A would then type `!pick Destination`, picking the first map and so on, until only one map remains, which will be the tie-breaker map. team B then picks the side using `!side attack`.
+{match_result_upload}
+"""
+
+match_result_upload =\
+"""
+To upload the match results, open the link below, click "Results" and enter the scores:
+{url}
+- For a best-of-1, enter the won round count (e.g. 11-3);
+- For other modes, enter the number of won matches (e.g. 2-1);
+- If your enemy did not appear, leave the fields blank and select "Enemy did not appear" in the "Additional fields" box;
+- If you made a mistake when entering the results, contact a referee.
 """
 
 
@@ -86,9 +99,12 @@ class Match:
 
         self.status_handle = None
         self.turn_handle = None
-        self.ended = False
+        self.force_done = False
+        self.deleted = False
         self.last_is_a_pick = True
         self.last_picked = False
+
+        self.url = None
 
     ## Override pickle serialization
     def __getstate__(self):
@@ -102,7 +118,12 @@ class Match:
         return state
 
     def is_in_match(self, member):
-        return self.teamA.role in member.roles or self.teamB.role in member.roles
+        if self.teamA.role and self.teamB.role:
+            return self.teamA.role in member.roles \
+                or self.teamB.role in member.roles
+        else:
+            return member.id in self.teamA.captains \
+                or member.id in self.teamB.captains
 
     def find_map(self, map_name):
         try:
@@ -115,7 +136,7 @@ class Match:
             return None
 
     def is_done(self):
-        return self.turn >= len(self.sequence)
+        return self.force_done or self.turn >= len(self.sequence)
 
     async def check(self, action, handle, map_id, force=False):
         if self.is_done():
@@ -155,20 +176,22 @@ class Match:
 
     async def begin(self, handle):
 
-        intro = self.mode_intro.format(m_teamA=self.teamA.role.mention,
-                                       m_teamB=self.teamB.role.mention,
-                                       teamA=self.teamA.name,
-                                       teamB=self.teamB.name)
+        intro = self.mode_intro.format(m_teamA=self.teamA.mention(),
+                                       m_teamB=self.teamB.mention(),
+                                       teamA=md_inline_code(self.teamA.name),
+                                       teamB=md_inline_code(self.teamB.name),
+                                       match_result_upload=\
+                                       match_result_upload.format(url=self.url) if self.url else '')
 
-        seq = ''.join( [ '• {}: {}\n'.format(s[0].name, s[1]) for s in self.sequence ] )
+        seq = ''.join( [ '• {}: {}\n'.format(md_normal(s[0].name), s[1]) for s in self.sequence ] )
         await handle.embed(self.mode_title, intro, 0,
                            fields=[ { 'name': 'Pick & ban sequence', 'value': seq } ])
 
         await self.status(handle)
 
-        await handle.broadcast('match_created', ':sparkle: Match created: `{match_id}`\n**{teamA}** vs **{teamB}**\n'\
-                               .format(teamA=self.teamA.name,
-                                       teamB=self.teamB.name,
+        await handle.broadcast('match_created', ':sparkle: Match created: `{match_id}`\n{teamA} vs {teamB}\n'\
+                               .format(teamA=md_bold(self.teamA.name),
+                                       teamB=md_bold(self.teamB.name),
                                        match_id=handle.channel.name))
 
 
@@ -218,6 +241,11 @@ class Match:
         return True
 
     async def undo_map(self, handle):
+        if self.force_done:
+            self.force_done = False
+            await self.status(handle)
+            return True
+
         self.turn = self.turn - 1
         if self.turn < 0:
             self.turn = 0
@@ -265,6 +293,13 @@ class Match:
         await self.status(handle)
         return True
 
+    async def close_match(self, handle):
+        self.force_done = True
+        print('{ch}: Closed match'\
+              .format(ch=handle.channel))
+        await self.status(handle)
+        return True
+
     async def update_turn(self, handle):
         self.turn += 1
         await self.status(handle)
@@ -285,7 +320,7 @@ class Match:
         title = 'Current sequence status ({i}/{n}):'\
             .format(i=self.turn, n=len(self.sequence))
 
-        status = 0x2ecc71 if self.turn < len(self.sequence) else 0x992d22
+        status = 0x2ecc71 if not self.is_done() else 0x992d22
 
         if not self.status_handle:
             self.status_handle = handle.clone()
@@ -301,9 +336,9 @@ class Match:
             self.picked_maps.append(map_id)
             self.last_picked = True
 
-        if self.turn < len(self.sequence):
+        if self.turn < len(self.sequence) and not self.force_done:
             turn = 'Your turn {team}! Use `!{action} {choice}`.{extra}'\
-                .format(team=self.sequence[self.turn][0].role.mention,
+                .format(team=self.sequence[self.turn][0].mention(),
                         action=self.sequence[self.turn][1],
                         choice='attack/defense' if self.sequence[self.turn][1] == 'side' else 'xxxxx',
                         extra=self.get_turn_info(self.sequence[self.turn]))
@@ -312,26 +347,33 @@ class Match:
             self.turn_handle.message = await handle.send(turn)
 
     async def summary(self, handle):
-        await handle.send('Ban sequence finished!\n\nMap to play: **{map1}** ({teamA} **{side}**)\nglhf!\n\n:warning: **And dont forget to screenshot the end result**! :warning: '\
-                          .format(teamA=self.teamA.name,
-                                  teamB=self.teamB.name,
-                                  map1=self.picked_maps[0],
-                                  side=self.picked_sides[0]))
+        await handle.send('Ban sequence finished!\n\n'
+                          'Map to play: {map1} ({team1} {side1})\n'
+                          'glhf!\n\n'
+                          ':warning: **And dont forget to screenshot the end result**! :warning:\n'
+                          '{url}'\
+                          .format(map1=md_bold(self.picked_maps[0]),
+                                  side1=md_bold(self.picked_sides[0]),
+                                  team1=md_normal(self.sequence[-1][0].name),
+                                  url=self.url if self.url else ''))
 
-        await handle.broadcast('match_starting', ':arrow_forward: Match is ready to start: `{match_id}`\n**{teamA}** vs **{teamB}**\n - Map: **{map1}** ({teamA} **{side}**)\n'\
-                               .format(teamA=self.teamA.name,
-                                       teamB=self.teamB.name,
-                                       map1=self.picked_maps[0],
-                                       side=self.picked_sides[0],
-                                       match_id=handle.channel.name))
+        await handle.broadcast('match_starting', ':arrow_forward: Match is ready to start: {match_id}\n'
+                               '{teamA} vs {teamB}\n'
+                               ' - Map: {map1} ({team1} {side1})\n'\
+                               .format(teamA=md_bold(self.teamA.name),
+                                       teamB=md_bold(self.teamB.name),
+                                       map1=md_bold(self.picked_maps[0]),
+                                       side1=md_bold(self.picked_sides[0]),
+                                       team1=md_normal(self.sequence[-1][0].name),
+                                       match_id=md_inline_code(handle.channel.name)))
 
     def get_turn_info(self, turn_tuple):
         action = turn_tuple[1]
         if action == 'side' and len(self.picked_maps) > 0:
             map_side = self.picked_maps[len(self.picked_sides)]
-            return '   Map {id}: **{map}**'\
+            return '   Map {id}: {map}'\
                 .format(id=len(self.picked_sides) + 1,
-                        map=map_side)
+                        map=md_bold(map_side))
         else:
             return ''
 
@@ -360,22 +402,35 @@ class MatchBo2(Match):
             self.sequence.append( (t, a) )
 
     async def summary(self, handle):
-        await handle.send('Pick & ban sequence finished!\n\nMap 1: **{map1}** ({teamB} **{side1}**)\nMap 2: **{map2}** ({teamA} **{side2}**)\nglhf!\n\n:warning: **And dont forget to screenshot all match results**! :warning:'\
-                          .format(teamA=self.teamA.name,
-                                  teamB=self.teamB.name,
-                                  map1=self.picked_maps[0],
-                                  map2=self.picked_maps[1],
-                                  side1=self.picked_sides[0],
-                                  side2=self.picked_sides[1]))
+        await handle.send('Pick & ban sequence finished!\n\n'
+                          'Map 1: {map1} ({team1} {side1})\n'
+                          'Map 2: {map2} ({team2} {side2})\n'
+                          'glhf!\n\n'
+                          ':warning: **And dont forget to screenshot all match results**! :warning:\n'
+                          '{url}'\
+                          .format(teamA=md_bold(self.teamA.name),
+                                  teamB=md_bold(self.teamB.name),
+                                  map1=md_bold(self.picked_maps[0]),
+                                  map2=md_bold(self.picked_maps[1]),
+                                  side1=md_bold(self.picked_sides[0]),
+                                  side2=md_bold(self.picked_sides[1]),
+                                  team1=md_normal(self.sequence[-2][0].name),
+                                  team2=md_normal(self.sequence[-1][0].name),
+                                  url=self.url if self.url else ''))
 
-        await handle.broadcast('match_starting', ':arrow_forward: Match is ready to start: `{match_id}`\n**{teamA}** vs **{teamB}**\n - Map 1: **{map1}** ({teamB} **{side1}**)\n - Map 2: **{map2}** ({teamA} **{side2}**)\n'\
-                          .format(teamA=self.teamA.name,
-                                  teamB=self.teamB.name,
-                                  map1=self.picked_maps[0],
-                                  map2=self.picked_maps[1],
-                                  side1=self.picked_sides[0],
-                                  side2=self.picked_sides[1],
-                                  match_id=handle.channel.name))
+        await handle.broadcast('match_starting', ':arrow_forward: Match is ready to start: {match_id}\n'
+                               '{teamA} vs {teamB}\n'
+                               ' - Map 1: {map1} ({team1} {side1})\n'
+                               ' - Map 2: {map2} ({team2} {side2})\n'\
+                          .format(teamA=md_bold(self.teamA.name),
+                                  teamB=md_bold(self.teamB.name),
+                                  map1=md_bold(self.picked_maps[0]),
+                                  map2=md_bold(self.picked_maps[1]),
+                                  side1=md_bold(self.picked_sides[0]),
+                                  side2=md_bold(self.picked_sides[1]),
+                                  team1=md_normal(self.sequence[-2][0].name),
+                                  team2=md_normal(self.sequence[-1][0].name),
+                                  match_id=md_inline_code(handle.channel.name)))
 
 class MatchBo3(Match):
     def __init__(self, teamA, teamB, maps):
@@ -402,23 +457,38 @@ class MatchBo3(Match):
         self.sequence.append( (self.sequence[-1][0], 'side') )
 
     async def summary(self, handle):
-        await handle.send('Pick & ban sequence finished!\n\nMap 1: **{map1}** ({teamB} **{side1}**)\nMap 2: **{map2}** ({teamA} **{side2}**)\nTie-breaker map: **{map3}** ({teamA} **{side3}**)\nglhf!\n\n:warning: **And dont forget to screenshot all match results**! :warning:'\
-                          .format(teamA=self.teamA.name,
-                                  teamB=self.teamB.name,
-                                  map1=self.picked_maps[0],
-                                  map2=self.picked_maps[1],
-                                  map3=self.picked_maps[2],
-                                  side1=self.picked_sides[0],
-                                  side2=self.picked_sides[1],
-                                  side3=self.picked_sides[2]))
+        await handle.send('Pick & ban sequence finished!\n\n'
+                          'Map 1: {map1} ({team1} {side1})\n'
+                          'Map 2: {map2} ({team2} {side2})\n'
+                          'Tie-breaker map: {map3} ({team3} {side3})\n'
+                          'glhf!\n\n'
+                          ':warning: **And dont forget to screenshot all match results**! :warning:\n'
+                          '{url}'\
+                          .format(map1=md_bold(self.picked_maps[0]),
+                                  map2=md_bold(self.picked_maps[1]),
+                                  map3=md_bold(self.picked_maps[2]),
+                                  side1=md_bold(self.picked_sides[0]),
+                                  side2=md_bold(self.picked_sides[1]),
+                                  side3=md_bold(self.picked_sides[2]),
+                                  team1=md_bold(self.sequence[-3][0].name),
+                                  team2=md_normal(self.sequence[-2][0].name),
+                                  team3=md_normal(self.sequence[-1][0].name),
+                                  url=self.url if self.url else ''))
 
-        await handle.broadcast('match_starting', ':arrow_forward: Match is ready to start: `{match_id}`\n**{teamA}** vs **{teamB}**\n - Map 1: **{map1}** ({teamB} **{side1}**)\n - Map 2: **{map2}** ({teamA} **{side2}**)\n - Tie-breaker map: **{map3}** ({teamA} **{side3}**)\n'\
-                          .format(teamA=self.teamA.name,
-                                  teamB=self.teamB.name,
-                                  map1=self.picked_maps[0],
-                                  map2=self.picked_maps[1],
-                                  map3=self.picked_maps[2],
-                                  side1=self.picked_sides[0],
-                                  side2=self.picked_sides[1],
-                                  side3=self.picked_sides[2],
-                                  match_id=handle.channel.name))
+        await handle.broadcast('match_starting', ':arrow_forward: Match is ready to start: {match_id}\n'
+                               '{teamA} vs {teamB}\n'
+                               ' - Map 1: {map1} ({team1} {side1})\n'
+                               ' - Map 2: {map2} ({team2} {side2})\n'
+                               ' - Tie-breaker map: {map3} ({team3} {side3})\n'\
+                          .format(teamA=md_bold(self.teamA.name),
+                                  teamB=md_bold(self.teamB.name),
+                                  map1=md_bold(self.picked_maps[0]),
+                                  map2=md_bold(self.picked_maps[1]),
+                                  map3=md_bold(self.picked_maps[2]),
+                                  side1=md_bold(self.picked_sides[0]),
+                                  side2=md_bold(self.picked_sides[1]),
+                                  side3=md_bold(self.picked_sides[2]),
+                                  team1=md_normal(self.sequence[-3][0].name),
+                                  team2=md_normal(self.sequence[-2][0].name),
+                                  team3=md_normal(self.sequence[-1][0].name),
+                                  match_id=md_bold(handle.channel.name)))

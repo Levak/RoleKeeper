@@ -7,10 +7,17 @@
 
     "roles": {
         "referee": { "name": "Referees" },
+        "coreferee": { "name": "Co-Referees" },
         "streamer": { "name": "Streamers" },
         "captain": { "name": "{} Captains", "color": "0xf1c40f" },
         "group": { "name": "Group {}" },
         "team": { "name": "{} team", "color": "orange" }
+    },
+
+    "driver": {
+        "refresh_period": 60,
+        "max_advance": 3600,
+        "utc_offset": 0
     },
 
     "maps": {

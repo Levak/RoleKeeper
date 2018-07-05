@@ -37,13 +37,23 @@ class Cup(CustomRole):
 
 ### Class that holds information about a group
 class Group(CustomRole):
-    def __init__(self, name, role):
+    def __init__(self, id, name, role):
+        self.id = id
         CustomRole.__init__(self, name, role)
 
 ### Class that holds information about a team
-class Team:
+class Team(CustomRole):
     def __init__(self, name, role):
         CustomRole.__init__(self, name, role)
+        self.captains = {}
+
+    def mention(self):
+        if self.role:
+            return self.role.mention
+        elif len(self.captains) == 0:
+            return self.name
+        else:
+            return ', '.join([ c.member.mention for c in self.captains.values() if c.member ])
 
 ### Class that holds information about a team captain
 class TeamCaptain:
@@ -58,8 +68,11 @@ class TeamCaptain:
         # imported into db
         self.team = None
 
+        # Discord object will in be filled later
+        self.member = None
+
     def __str__(self):
-        return '{nick} - {team} - Group {g} ({id})'\
+        return '{nick} - {team} - {g} ({id})'\
             .format(nick=self.nickname,
                     team=self.team_name,
                     id=self.discord,
