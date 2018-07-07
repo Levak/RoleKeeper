@@ -40,7 +40,7 @@ class Handle:
             try:
                 db, error = bot.find_cup_db(self.member.server, captain=str(self.member))
                 if not error:
-                    self.team = db['captains'][str(self.member)].team
+                    self.team = db['captains'][str(self.member)].team ## TODO UUID
             except KeyError:
                 pass
 

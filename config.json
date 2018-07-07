@@ -2,8 +2,12 @@
     "app_bot_token": "--redacted--",
 
     "emotes": {
-        "loading": "427584607454494729"
+        "loading": "427584607454494729",
+        "attacks": "464848886859694080",
+        "defends": "464848886851174420"
     },
+
+    "lang": "russian",
 
     "roles": {
         "referee": { "name": "Referees" },

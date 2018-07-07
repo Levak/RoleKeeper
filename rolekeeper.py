@@ -37,6 +37,8 @@ from db import open_db
 from handle import Handle
 from esports_driver import EsportsDriver
 
+import locale_s
+
 import atexit
 
 class RoleKeeper:
@@ -57,6 +59,17 @@ class RoleKeeper:
                             id=self.config['emotes'][name])
             else:
                 self.emotes[name] = ''
+
+        for name in [ 'attacks', 'defends' ]:
+            if 'emotes' in self.config and name in self.config['emotes']:
+                self.emotes[name] = '<:{name}:{id}>'\
+                    .format(name=name,
+                            id=self.config['emotes'][name])
+            else:
+                self.emotes[name] = ''
+
+        if 'lang' in self.config:
+            locale_s.set_lang(self.config['lang'])
 
         atexit.register(self.atexit)
 
@@ -208,7 +221,7 @@ class RoleKeeper:
         if 'teams' not in db:
             db['teams'] = {}
 
-        if 'captains' not in db:
+        if 'captains' not in db: ## TODO UUID intermediate db?
             db['captains'] = {}
 
         if 'groups' not in db:
@@ -247,7 +260,7 @@ class RoleKeeper:
     def find_cup_db(self, server, captain=None, match=None, hunt=None):
         if captain:
             for cup_name, db in self.db[server]['cups'].items():
-                if captain in db['captains']:
+                if captain in db['captains']: ## TODO UUID
                     return db, None
         elif match:
             for cup_name, db in self.db[server]['cups'].items():
@@ -401,7 +414,7 @@ class RoleKeeper:
 
                 cpt = None
                 for member in members:
-                    if str(member) == captain.discord:
+                    if str(member) == captain.discord: ## TODO UUID
                         cpt = member
                         break
 
@@ -433,7 +446,7 @@ class RoleKeeper:
         discord_id = str(member)
 
         # If captain already exists, remove him
-        if discord_id in db['captains']:
+        if discord_id in db['captains']: ## TODO UUID
             await self.remove_captain(message, server, member, cup_name)
 
         # Check if destination group exists
@@ -443,7 +456,7 @@ class RoleKeeper:
 
         # Add new captain to the list
         db['captains'][discord_id] = \
-            TeamCaptain(discord_id,
+            TeamCaptain(discord_id,  ## TODO UUID
                         team,
                         nick,
                         db['groups'][group_id] if group_id else None,
@@ -526,13 +539,13 @@ class RoleKeeper:
 
         discord_id = str(member)
 
-        if discord_id not in db['captains']:
+        if discord_id not in db['captains']:  ## TODO UUID
             await self.reply(message, '{} is not a known captain in cup {}'\
                              .format(member.mention,
                                      db['cup'].name))
             return False
 
-        captain = db['captains'][discord_id]
+        captain = db['captains'][discord_id] ## TODO UUID
 
         # remove captain from existing match rooms
         for channel_name, match in db['matches'].items():
@@ -542,8 +555,6 @@ class RoleKeeper:
             channel = discord.utils.get(server.channels, name=channel_name)
             if channel:
                 try:
-                    overwrite = discord.PermissionOverwrite()
-                    overwrite.read_messages = True
                     await self.client.delete_channel_permissions(channel, member)
 
                     print('Deleted permissions for "{discord}" in channel "<{channel}>"'\
@@ -612,7 +623,7 @@ class RoleKeeper:
             pass
 
         # Remove captain from DB
-        del db['captains'][discord_id]
+        del db['captains'][discord_id] ## TODO UUID
 
         return True
 
@@ -667,7 +678,7 @@ class RoleKeeper:
                 return
 
         # Check that the captain is indeed in our list
-        if discord_id not in db['captains']:
+        if discord_id not in db['captains']: ## TODO UUID search by discord ID?
             #print('WARNING: New user "{}" not in captain list'\
             #      .format(discord_id))
             return
@@ -675,7 +686,7 @@ class RoleKeeper:
         print('Team captain "{}" joined server'\
               .format(discord_id))
 
-        captain = db['captains'][discord_id]
+        captain = db['captains'][discord_id] ## TODO UUID
 
         role_list = []
 
@@ -927,11 +938,11 @@ class RoleKeeper:
         maps = db['cup'].maps
 
         if mode == self.MATCH_BO3:
-            match = MatchBo3(teamA, teamB, maps)
+            match = MatchBo3(teamA, teamB, maps, emotes=self.emotes)
         elif mode == self.MATCH_BO2:
-            match = MatchBo2(teamA, teamB, maps)
+            match = MatchBo2(teamA, teamB, maps, emotes=self.emotes)
         else:
-            match = Match(teamA, teamB, maps)
+            match = Match(teamA, teamB, maps, emotes=self.emotes)
 
         if url:
             match.url = url
@@ -1202,10 +1213,10 @@ class RoleKeeper:
         members = list(server.members)
         for member in members: # TODO go through db instead
             discord_id = str(member)
-            if discord_id not in db['captains']:
+            if discord_id not in db['captains']: ## TODO UUID
                 continue
 
-            captain = db['captains'][discord_id]
+            captain = db['captains'][discord_id] ## TODO UUID
 
             print ('Found captain "{member}"'\
                    .format(member=discord_id))
@@ -1604,7 +1615,7 @@ class RoleKeeper:
             for _, captain in captains.items():
                 captain.cup = db['cup']
 
-            db['captains'] = captains
+            db['captains'] = captains ## TODO UUID intermediate db?
             db['groups'] = groups # TODO cup-ref?
 
             await self.create_all_teams(server, cup_name)
@@ -1918,7 +1929,8 @@ class RoleKeeper:
         else:
             ref_role = self.get_special_role(server, 'referee')
             if ref_role:
-                await self.send('{ref}: More than one match for {info} in cup {cup}'\
+                await self.send(message.channel,
+                                '{ref}: More than one result for {info} in cup {cup}'\
                                 .format(ref=ref_role.mention,
                                         info=information,
                                         cup=db['cup'].name))
@@ -1948,7 +1960,9 @@ class RoleKeeper:
 
 
     ## Update captain info
-    ## 1. Update group assignation
+    ## - Update group assignation
+    ## - Update captain nickname
+    ## - Update captain discord ID
     async def update_cup(self, message, cup_name, attachment):
         server = message.server
 
@@ -1983,36 +1997,75 @@ class RoleKeeper:
             group_role = await self.get_or_create_role(server, group.name, color=role_color)
             group.role = group_role
 
+        remove_discord_list = []
         update_discord_list = []
         update_group_list = []
         count = 0
         for new_key, new_captain in captains.items():
             old_captain = None
+            old_key = None
+
+            # No discord id change
+            if len(new_captain.discord) > 0 and new_key in db['captains']:
+                old_captain = db['captains'][new_key] # TODO UUID
+                old_key = new_key
 
             # Try to find him via nickname
-            old_key = None
-            for old_key, cpt in db['captains'].items():
-                if cpt.nickname == new_captain.nickname:
-                    old_captain = cpt
-                    break
+            if not old_captain:
+                for old_key, cpt in db['captains'].items():
+                    if cpt.nickname == new_captain.nickname:
+                        old_captain = cpt
+                        break
 
-            # We found him via nickname
+            # then by team name (can be several captains per team)
+            if not old_captain:
+                for old_key, cpt in db['captains'].items():
+                    if cpt.team_name == new_captain.team_name:
+                        old_captain = cpt
+                        break
+
+            # We still didn't find him, means he is new
+            if not old_captain:
+                # Add him to DB
+                db['captains'][new_key] = new_captain
+                team = await self.create_team(server, db, new_captain.team_name)
+                new_captain.team = team
+                update_discord_list.append(new_captain)
+                print('Add captain "{nick}" for team "{team}"'\
+                      .format(nick=new_captain.nickname,
+                              team=new_captain.team_name))
+            elif old_captain.nickname != new_captain.nickname:
+                old_captain.nickname = new_captain.nickname
+                update_discord_list.append(old_captain)
+                print('Rename captain "{nick}" of team "{team}"'\
+                      .format(nick=new_captain.nickname,
+                              team=new_captain.team_name))
+
+
+            # We found him (either by nickname or team name)
             if old_captain:
                 # ... and his discord id is different
-                if False and old_key != new_key and len(new_captain.discord) > 0:
-                    # If the captain is already in the server
-                    if old_captain.member:
-                        # TODO, remove captain + roles
-                        pass
+                if new_captain.discord != old_captain.discord:
 
                     # Update key in DB
-                    old_captain.discord = new_key
-                    old_captain.member = None
                     db['captains'][new_key] = old_captain
-                    del db['captains'][old_key]
+
+                    # If the captain is already in the server
+                    if old_captain.member:
+                        # Remove him later
+                        remove_discord_list.append(old_captain.member)
+                    else:
+                        # else, simply remove him from db
+                        del db['captains'][old_key]
+
+                    # Update the discord ID
+                    old_captain.discord = new_captain.discord
+                    old_captain.member = None
                     update_discord_list.append(old_captain)
-                    print ('Updated discord id for "{cpt}"'\
-                           .format(cpt=old_captain.nickname))
+
+                    print ('Updated discord id for "{cpt}" to "{id}"'\
+                           .format(cpt=old_captain.nickname,
+                                   id=old_captain.discord))
 
                 # ... or his group
                 if old_captain.group != new_captain.group:
@@ -2039,15 +2092,9 @@ class RoleKeeper:
                             print ('WARNING: Failed to change role from "{member}"'\
                                    .format(member=old_captain.discord))
 
-            # We didn't find him via nickname, means he is new or different nickname
-            else:
-                # Add him to DB
-                db['captains'][new_key] = new_captain
-                team = await self.create_team(server, db, new_captain.team_name)
-                new_captain.team = team
-                update_discord_list.append(new_captain)
 
         captain_set = set()
+        captain_set.update(remove_discord_list)
         captain_set.update(update_discord_list)
         captain_set.update(update_group_list)
         count = len(captain_set)
@@ -2056,12 +2103,16 @@ class RoleKeeper:
         for captain in update_discord_list:
             member = discord.utils.find(lambda m: str(m) == captain.discord, members)
             if member:
-                self.handle_member_join(member)
+                await self.handle_member_join(member)
+
+        for member in remove_discord_list:
+            print('Remove captain {}'.format(str(member)))
+            await self.remove_captain(message, server, member, cup_name)
 
         await self.client.edit_message(reply, '{mention} Updated {count} captains.'\
                                        .format(mention=message.author.mention,
                                                count=count))
-        print ('Updated {count} captains"'\
+        print ('Updated {count} captains'\
                .format(count=count))
 
         return True
