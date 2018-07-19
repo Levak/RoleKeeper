@@ -998,9 +998,11 @@ class RoleKeeper:
                     overrides.append( (coref_role, read_perms) )
 
                 for captain in teamA.captains.values():
-                    overrides.append( (captain.member, read_perms) )
+                    if captain.member:
+                        overrides.append( (captain.member, read_perms) )
                 for captain in teamB.captains.values():
-                    overrides.append( (captain.member, read_perms) )
+                    if captain.member:
+                        overrides.append( (captain.member, read_perms) )
 
                 channel = await self.client.create_channel(
                     server,
@@ -1265,6 +1267,7 @@ class RoleKeeper:
     WIPE_ALL=1
     WIPE_FINISHED=2
     WIPE_ROOMS=3
+    WIPE_AUTO=4
 
     # Remove all match rooms
     # 1. Find all match channels that where created by the bot for this cup
@@ -1277,19 +1280,34 @@ class RoleKeeper:
             await self.reply(message, error)
             return False
 
-        count = len(db['matches'])
-        reply = await self.reply(message,
-                                 '{l} Deleting {count} matches... (this might take a while)'\
-                                 .format(count=count,
-                                         l=self.emotes['loading']))
+        matches = list(db['matches'].items())
+        count = len(matches)
 
-        for channel_name, match in db['matches'].items():
+        if mode == self.WIPE_ALL:
+            db['matches'].clear()
+
+        if mode != self.WIPE_AUTO:
+            reply = await self.reply(message,
+                                     '{l} Deleting {count} matches... (this might take a while)'\
+                                     .format(count=count,
+                                             l=self.emotes['loading']))
+        else:
+            reply = None
+
+        for channel_name, match in matches:
             channel = discord.utils.get(server.channels, name=channel_name)
+
             if not channel:
                 count = count - 1
                 continue
 
-            if mode == self.WIPE_FINISHED and not match.is_done():
+            if mode == self.WIPE_AUTO \
+               and not match.auto_done:
+                count = count - 1
+                continue
+
+            if mode == self.WIPE_FINISHED \
+               and not match.is_done():
                 count = count - 1
                 continue
 
@@ -1301,12 +1319,10 @@ class RoleKeeper:
                 print ('WARNING: Fail to Delete channel "{channel}"'\
                        .format(channel=channel_name))
 
-        if mode == self.WIPE_ALL:
-            db['matches'].clear()
-
-        await self.client.edit_message(reply, '{mention} Deleted {count} matches.'\
-                                       .format(mention=message.author.mention,
-                                               count=count))
+        if reply:
+            await self.client.edit_message(reply, '{mention} Deleted {count} matches.'\
+                                           .format(mention=message.author.mention,
+                                                   count=count))
 
         return True
 

@@ -53,6 +53,7 @@ class Match:
         self.status_handle = None
         self.turn_handle = None
         self.force_done = False
+        self.auto_done = False
         self.deleted = False
         self.last_is_a_pick = True
         self.last_picked = False
@@ -79,7 +80,9 @@ class Match:
                 or member.id in self.teamB.captains
 
     def to_side(self, side_id):
-        if self.emotes and side_id in self.emotes:
+        if self.emotes \
+           and side_id in self.emotes \
+           and len(self.emotes[side_id]) > 0:
             return self.emotes[side_id]
         else:
             return md_bold(side_id)
@@ -95,7 +98,7 @@ class Match:
             return None
 
     def is_done(self):
-        return self.force_done or self.turn >= len(self.sequence)
+        return self.auto_done or self.force_done or self.turn >= len(self.sequence)
 
     async def check(self, action, handle, map_id, force=False):
         if self.is_done():
@@ -200,8 +203,9 @@ class Match:
         return True
 
     async def undo_map(self, handle):
-        if self.force_done:
+        if self.force_done or self.auto_done:
             self.force_done = False
+            self.auto_done = False
             await self.status(handle)
             return True
 

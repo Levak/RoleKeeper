@@ -21,7 +21,8 @@
     "driver": {
         "refresh_period": 60,
         "max_advance": 3600,
-        "utc_offset": 0
+        "utc_offset": 0,
+        "autodelete": true
     },
 
     "maps": {

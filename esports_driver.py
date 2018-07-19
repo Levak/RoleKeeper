@@ -195,10 +195,11 @@ class EsportsDriver:
             match_status.status = match_status.WAITING
         elif finished:
             match_status.status = match_status.FINISHED
-            if match_status.match and not match_status.match.is_done():
-                # TODO temporary... find a way to use await close_match(handle)
-                print('Automatically closed match: {}'.format(match_status.match.url))
-                match_status.match.force_done = True
+            if match_status.match:
+                match_status.match.auto_done = True
+                if not match_status.match.is_done():
+                    # TODO temporary... find a way to use await close_match(handle)
+                    print('Automatically closed match: {}'.format(match_status.match.url))
         elif match_status.match:
             if match_status.status < match_status.DONE and match_status.match.is_done():
                 match_status.status = match_status.DONE
@@ -226,7 +227,7 @@ class EsportsDriver:
 
             all_status_arr.append(str(match_status))
 
-        MAX_STATUS_LINES = 15
+        MAX_STATUS_LINES = 16
         cropped = False
         if len(all_status_arr) <= MAX_STATUS_LINES:
             status_arr = all_status_arr
@@ -271,6 +272,8 @@ class EsportsDriver:
                 match_id, match_url, team1_name, team2_name, mode, time = \
                     item[0], item[1], item[2], item[3], item[4], item[5]
 
+                await self.garbage_collect()
+
                 print (match_id, team1_name, team2_name, mode, time)
 
                 await self.create_match(match_id, match_url, team1_name, team2_name, mode, time)
@@ -293,6 +296,7 @@ class EsportsDriver:
         print ('Parser task')
 
         await self.start_event.wait()
+        self._trigger_garbage_collector = True
 
         while self.alive:
             try:
@@ -313,6 +317,21 @@ class EsportsDriver:
             await asyncio.sleep(self.refresh_period)
 
         print ('End of parser task')
+
+    ## Garbage collector for match rooms
+    async def garbage_collect(self):
+        if 'driver' not in self.bot.config \
+           or 'autodelete' not in self.bot.config['driver'] \
+           or self.bot.config['driver']['autodelete'] != True:
+            return
+
+        if not self._trigger_garbage_collector:
+            return
+        self._trigger_garbage_collector = False
+
+        await self.bot.wipe_matches(self.handle.message if self.handle else None,
+                                    self.cup_name,
+                                    mode=self.bot.WIPE_AUTO)
 
     ## Display an error about a match only once.
     ##
@@ -354,6 +373,7 @@ class EsportsDriver:
         for match in matches:
             team1_d = match.find('div', attrs={'class': u'team1'})
             team2_d = match.find('div', attrs={'class': u'team2'})
+            details_d = match.find('div', attrs={'class': u'match_detail_content'})
 
             team1_a = team1_d.find('a') if team1_d else None
             team2_a = team2_d.find('a') if team2_d else None
@@ -380,7 +400,8 @@ class EsportsDriver:
                 rk_match = self.get_match(match_id, team1_name, team2_name)
 
                 if 'winner' in team1_d.attrs['class'] \
-                   or 'winner' in team2_d.attrs['class']:
+                   or 'winner' in team2_d.attrs['class'] \
+                   or details_d:
                     finished = True
                 elif not rk_match:
                     co_matches.append(
@@ -397,6 +418,7 @@ class EsportsDriver:
         await self.update_status()
         if len(co_matches) > 0:
             print('Found {} new matches'.format(len(co_matches)))
+            self._trigger_garbage_collector = True
             await asyncio.wait(co_matches)
             print('End of parsing')
         await self.update_status()
@@ -420,10 +442,15 @@ class EsportsDriver:
         utcoff = datetime.timedelta(hours=self.utc_offset)
         max_advance = datetime.timedelta(seconds=self.max_advance)
         utcnow = datetime.datetime.utcnow()
-        date = datetime.datetime.strptime(date_s, '%d.%m.%Y %H:%M') - utcoff \
-               if date_s else utcnow
+        unknown_date = False
+        try:
+            date = datetime.datetime.strptime(date_s, '%d.%m.%Y %H:%M') - utcoff \
+                   if date_s else utcnow
+        except:
+            print('ERROR: Failed to parse date "{}" for match id "{}"'.format(date_s, match_id))
+            unknown_date = True
 
-        if utcnow < date - max_advance:
+        if utcnow < date - max_advance or unknown_date:
             if match_id in self.match_status:
                 match_status = self.match_status[match_id]
                 self.update_match_status(status=match_status, waiting=True)
