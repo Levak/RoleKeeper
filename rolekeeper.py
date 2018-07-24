@@ -31,7 +31,7 @@ import datetime
 import json
 
 from team import Team, TeamCaptain, Cup, Group
-from match import Match, MatchBo2, MatchBo3
+from match import Match, MatchBo2, MatchBo3, MatchBo5
 from inputs import *
 from db import open_db
 from handle import Handle
@@ -807,6 +807,7 @@ class RoleKeeper:
     MATCH_BO1 = 1
     MATCH_BO2 = 2
     MATCH_BO3 = 3
+    MATCH_BO5 = 5
 
     REUSE_UNK = 0
     REUSE_YES = 2
@@ -817,7 +818,7 @@ class RoleKeeper:
         db, error = self.get_cup_db(server, cup_name)
         if error:
             await self.reply(message, error)
-            return False
+            return False, None
 
         if flip_coin:
             randomized = [ _roleteamA, _roleteamB ]
@@ -843,7 +844,7 @@ class RoleKeeper:
 
         if notfound:
             await self.reply(message, 'Role "{}" is not a known team'.format(notfound))
-            return False
+            return False, None
 
         return await self.matchup(message, server, teamA, teamB, cat_id, cup_name,
                                   mode=mode, flip_coin=flip_coin, reuse=reuse, url=url)
@@ -853,7 +854,7 @@ class RoleKeeper:
         db, error = self.get_cup_db(server, cup_name)
         if error:
             await self.reply(message, error)
-            return False
+            return False, None
 
         if flip_coin:
             randomized = [ _cptteamA, _cptteamB ]
@@ -876,10 +877,10 @@ class RoleKeeper:
 
         if not teamA:
             await self.reply(message, '{} is not a captain of a known team'.format(cptteamA.mention))
-            return False
+            return False, None
         if not teamB:
             await self.reply(message, '{} is not a captain of a known team'.format(cptteamB.mention))
-            return False
+            return False, None
 
         return await self.matchup(message, server, teamA, teamB, cat_id, cup_name,
                                   mode=mode, flip_coin=flip_coin, reuse=reuse, url=url)
@@ -890,7 +891,7 @@ class RoleKeeper:
         db, error = self.get_cup_db(server, cup_name)
         if error:
             await self.reply(message, error)
-            return False
+            return False, None
 
         if flip_coin:
             randomized = [ _teamA, _teamB ]
@@ -918,7 +919,7 @@ class RoleKeeper:
 
         if notfound:
             await self.reply(message, '"{}" is not a known team'.format(notfound))
-            return False
+            return False, None
 
         return await self.matchup(message, server, teamA, teamB, cat_id, cup_name,
                                   mode=mode, flip_coin=flip_coin, reuse=reuse, url=url)
@@ -932,12 +933,14 @@ class RoleKeeper:
         db, error = self.get_cup_db(server, cup_name)
         if error:
             await self.reply(message, error)
-            return False
+            return False, None
 
         # Create the match
         maps = db['cup'].maps
 
-        if mode == self.MATCH_BO3:
+        if mode == self.MATCH_BO5:
+            match = MatchBo5(teamA, teamB, maps, emotes=self.emotes)
+        elif mode == self.MATCH_BO3:
             match = MatchBo3(teamA, teamB, maps, emotes=self.emotes)
         elif mode == self.MATCH_BO2:
             match = MatchBo2(teamA, teamB, maps, emotes=self.emotes)
@@ -965,11 +968,11 @@ class RoleKeeper:
             channel = discord.utils.get(server.channels, name=channel_name)
 
             # Channel already exists, but we do not know if we should reuse it
-            if channel and reuse == self.REUSE_UNK:
+            if (channel or channel_name in db['matches']) and reuse == self.REUSE_UNK:
                 await self.reply(message, 'Room `{}` already exists!\nAdd `reuse` in the command to reuse the same channel or `new` to create a new one.'.format(channel_name))
-                return False
+                return False, None
 
-            if not channel or reuse == self.REUSE_YES:
+            if not (channel or channel_name in db['matches']) or reuse == self.REUSE_YES:
                 break
 
             index = index + 1
@@ -1035,10 +1038,10 @@ class RoleKeeper:
         handle = Handle(self, channel=channel)
         await match.begin(handle)
 
-        return True
+        return True, channel_name
 
     # Returns if a member is a team captain in the given channel
-    def is_captain_in_match(self, member, channel):
+    def is_captain_in_match(self, member, channel, force=False):
         server = member.server
 
         if server not in self.db:
@@ -1050,6 +1053,9 @@ class RoleKeeper:
 
         if channel.name not in db['matches']:
             return False
+
+        if force:
+            return True
 
         return db['matches'][channel.name].is_in_match(member)
 

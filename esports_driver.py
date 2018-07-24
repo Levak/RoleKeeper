@@ -443,6 +443,7 @@ class EsportsDriver:
         max_advance = datetime.timedelta(seconds=self.max_advance)
         utcnow = datetime.datetime.utcnow()
         unknown_date = False
+        date = utcnow
         try:
             date = datetime.datetime.strptime(date_s, '%d.%m.%Y %H:%M') - utcoff \
                    if date_s else utcnow
@@ -478,6 +479,8 @@ class EsportsDriver:
             mode = self.bot.MATCH_BO2
         elif mode_name == 'Best of 3':
             mode = self.bot.MATCH_BO3
+        elif mode_name == 'Best of 5':
+            mode = self.bot.MATCH_BO5
         elif mode_name:
             print('Unknown mode for match {}: {}'.format(match_id, mode_name))
         else:
@@ -488,32 +491,40 @@ class EsportsDriver:
     ## Get the associated Rolekeeper match for given team names and add it to
     ## internal driver cache if found.
     def get_match(self, match_id, team1_name, team2_name):
-
         # If we didn't find the match id in our cache, we need to find it from
-        # Rolekeeper DB
+        # Rolekeeper DB via match ID
         if match_id not in self.cached_matches:
+            for channel_name, rk_match in self.db['matches'].items():
+                if hasattr(rk_match, 'match_id') and rk_match.match_id == match_id:
+                    self.cache_match(match_id, channel_name)
+                    break
+        else:
+            pass
 
-            for channel, rk_match in self.db['matches'].items():
-                # TODO what to do for duplicate matches? (e.g. loser bracket)
+        # We still don't have the match in cache, means it was created by hand
+        if match_id not in self.cached_matches:
+            for channel_name, rk_match in self.db['matches'].items():
                 if (rk_match.teamA.name == team1_name \
                    and rk_match.teamB.name == team2_name) \
                     or (rk_match.teamA.name == team2_name \
                         and rk_match.teamB.name == team1_name):
 
-                    self.cached_matches[match_id] = channel
-                    self.known_match_errors[match_id] = []
-                    break
-
+                    if not hasattr(rk_match, 'match_id') or not rk_match.match_id:
+                        self.cache_match(match_id, channel_name)
+                        break
         else:
             pass
 
+        # We found it, we can now proceed
         if match_id in self.cached_matches:
+            # But wait, is the match actually in Rolekeeper DB?
             if self.cached_matches[match_id] not in self.db['matches']:
                 del self.cached_matches[match_id]
                 if match_id in self.match_status:
                     del self.match_status[match_id]
+                # Retry
                 return self.get_match(match_id, team1_name, team2_name)
-
+            # Ok, it's still is, then return the match
             return self.db['matches'][self.cached_matches[match_id]]
         else:
             return None
@@ -523,6 +534,12 @@ class EsportsDriver:
             return self.cached_matches[match_id]
         else:
             return None
+
+    def cache_match(self, match_id, channel_name):
+        self.cached_matches[match_id] = channel_name
+        self.known_match_errors[match_id] = []
+        if channel_name in self.db['matches']:
+            self.db['matches'][channel_name].match_id = match_id
 
     ## Create the match room in Discord
     async def create_match(self, match_id, match_url, team1_name, team2_name, mode, time):
@@ -550,17 +567,20 @@ class EsportsDriver:
             cat_id = self.cat_id
 
         try:
-            await self.bot.matchup(self.handle.message, \
-                                   self.handle.message.server, \
-                                   captainA.team, captainB.team, \
-                                   cat_id, self.db['cup'].name, \
-                                   mode=mode,
-                                   url=match_url)
+            res, channel_name = \
+                await self.bot.matchup(self.handle.message, \
+                                       self.handle.message.server, \
+                                       captainA.team, captainB.team, \
+                                       cat_id, self.db['cup'].name, \
+                                       mode=mode,
+                                       reuse=self.bot.REUSE_NO,
+                                       url=match_url)
+            if res:
+                # Cache the match
+                self.cache_match(match_id, channel_name)
+
         except:
             await self.match_error(match_id, 'Error creating match {} vs {}'\
                                    .format(captainA.team.name,
                                            captainB.team.name))
             return
-
-        # Cache the match
-        _ = self.get_match(match_id, team1_name, team2_name)

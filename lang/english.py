@@ -56,6 +56,18 @@ For instance, team A types `!ban Yard` which will then ban the map _Yard_ from t
 {match_result_upload}
 """,
 
+    'bo5_title': 'BEST OF 5',
+    'bo5_welcome_message': """
+Welcome {m_teamA} and {m_teamB}!
+
+This text channel will be used by the judge and team captains to exchange anything about the match between teams {teamA} and {teamB}.
+
+The pick&ban sequence is made using the `!pick`, `!ban` and `!side` commands one by one using the order defined below.
+
+For instance, team A types `!ban Yard` which will then ban the map _Yard_ from the match, team B types `!ban d17` which will ban the map D-17. team A would then type `!pick Destination`, picking the first map and so on, until only one map remains, which will be the tie-breaker map. Team B then picks the side using `!side attack`.
+{match_result_upload}
+""",
+
     'match_result_upload': """
 To upload the match results, open the link below, click "Results" and enter the scores:
 {url}

@@ -471,3 +471,82 @@ class MatchBo3(Match):
                                   team2=md_normal(self.sequence[-2][0].name),
                                   team3=md_normal(self.sequence[-1][0].name),
                                   match_id=md_bold(handle.channel.name)))
+
+class MatchBo5(Match):
+    def __init__(self, teamA, teamB, maps, emotes=None):
+        Match.__init__(self, teamA, teamB, maps, emotes=emotes)
+
+        assert len(self.maps) >= 5, 'Not enough maps'
+
+        self.mode_title = tr('bo5_title')
+        self.mode_intro = tr('bo5_welcome_message')
+
+        self.sequence = []
+        last_i = len(self.maps) - 1
+
+        for i in range(last_i + 4):
+            t = teamA if i % 2 == (1 if i >= last_i else 0) else teamB
+            a = 'side' if i >= last_i \
+                else 'pick' if i >= last_i - 4 \
+                     else 'ban'
+            self.sequence.append( (t, a) )
+
+        self.sequence.append( (self.sequence[-1][0], 'side') )
+
+    async def summary(self, handle):
+        await handle.send('{title}\n\n'
+                          '{map} 1: {map1} ({team1} {side1})\n'
+                          '{map} 2: {map2} ({team2} {side2})\n'
+                          '{map} 3: {map3} ({team3} {side3})\n'
+                          '{map} 4: {map4} ({team4} {side4})\n'
+                          '{tiebreaker}: {map5} ({team5} {side5})\n'
+                          '{good_luck}\n\n'
+                          ':warning: **{warning}** :warning:\n'
+                          '{url}'\
+                          .format(title=tr('match_sequence_finished'),
+                                  map=tr('match_map'),
+                                  tiebreaker=tr('match_tiebreaker_map'),
+                                  good_luck=tr('match_good_luck'),
+                                  warning=tr('match_warning'),
+                                  map1=md_bold(self.picked_maps[0]),
+                                  map2=md_bold(self.picked_maps[1]),
+                                  map3=md_bold(self.picked_maps[2]),
+                                  map4=md_bold(self.picked_maps[3]),
+                                  map5=md_bold(self.picked_maps[4]),
+                                  side1=self.to_side(self.picked_sides[0]),
+                                  side2=self.to_side(self.picked_sides[1]),
+                                  side3=self.to_side(self.picked_sides[2]),
+                                  side4=self.to_side(self.picked_sides[3]),
+                                  side5=self.to_side(self.picked_sides[4]),
+                                  team1=md_normal(self.sequence[-5][0].name),
+                                  team2=md_normal(self.sequence[-4][0].name),
+                                  team3=md_normal(self.sequence[-3][0].name),
+                                  team4=md_normal(self.sequence[-2][0].name),
+                                  team5=md_normal(self.sequence[-1][0].name),
+                                  url=self.url if self.url else ''))
+
+        await handle.broadcast('match_starting', ':arrow_forward: Match is ready to start: {match_id}\n'
+                               '{teamA} vs {teamB}\n'
+                               ' - Map 1: {map1} ({team1} {side1})\n'
+                               ' - Map 2: {map2} ({team2} {side2})\n'
+                               ' - Map 3: {map3} ({team3} {side3})\n'
+                               ' - Map 4: {map4} ({team4} {side4})\n'
+                               ' - Tie-breaker map: {map5} ({team5} {side5})\n'\
+                          .format(teamA=md_bold(self.teamA.name),
+                                  teamB=md_bold(self.teamB.name),
+                                  map1=md_bold(self.picked_maps[0]),
+                                  map2=md_bold(self.picked_maps[1]),
+                                  map3=md_bold(self.picked_maps[2]),
+                                  map4=md_bold(self.picked_maps[3]),
+                                  map5=md_bold(self.picked_maps[4]),
+                                  side1=self.to_side(self.picked_sides[0]),
+                                  side2=self.to_side(self.picked_sides[1]),
+                                  side3=self.to_side(self.picked_sides[2]),
+                                  side4=self.to_side(self.picked_sides[3]),
+                                  side5=self.to_side(self.picked_sides[4]),
+                                  team1=md_normal(self.sequence[-5][0].name),
+                                  team2=md_normal(self.sequence[-4][0].name),
+                                  team3=md_normal(self.sequence[-3][0].name),
+                                  team4=md_normal(self.sequence[-2][0].name),
+                                  team5=md_normal(self.sequence[-1][0].name),
+                                  match_id=md_bold(handle.channel.name)))

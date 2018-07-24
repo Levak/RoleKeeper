@@ -127,7 +127,7 @@ async def on_message(message):
 
     is_admin = message.author.server_permissions.manage_roles
     is_ref = discord.utils.get(message.author.roles, name=rk.config['roles']['referee']['name']) or is_admin
-    is_captain_in_match = rk.is_captain_in_match(message.author, message.channel) or is_admin or is_ref
+    is_captain_in_match = rk.is_captain_in_match(message.author, message.channel, is_admin or is_ref)
     is_streamer = discord.utils.get(message.author.roles, name=rk.config['roles']['streamer']['name']) or is_ref
 
     if len(message.content) <= 0:
@@ -138,7 +138,6 @@ async def on_message(message):
     if not _error and not is_ref:
         await rk.on_hunt_message(message, _db)
         return
-
 
     command = message.content.split()[0]
     args = message.content.replace(command, '', 1)
@@ -358,12 +357,14 @@ async def on_message(message):
                 await rk.reply(message,
                                'Too much or not enough arguments:\n```!check_captain @xxx [cup]```')
 
-        elif is_ref and (command == '!bo1' or command == '!bo2' or command == '!bo3'):
+        elif is_ref and (command == '!bo1' or command == '!bo2' or command == '!bo3' or command == '!bo5'):
             mode = RoleKeeper.MATCH_BO1
             if command == '!bo2':
                 mode = RoleKeeper.MATCH_BO2
             elif command == '!bo3':
                 mode = RoleKeeper.MATCH_BO3
+            elif command == '!bo5':
+                mode = RoleKeeper.MATCH_BO5
 
             cat_id = parts[2][1:] \
                      if len(parts) > 2 and parts[2].startswith('>')\
@@ -375,32 +376,32 @@ async def on_message(message):
                                   else ''
 
             if len(message.role_mentions) == 2:
-                ret = await rk.matchup_role(message,
-                                            message.author.server,
-                                            message.role_mentions[0],
-                                            message.role_mentions[1],
-                                            cat_id,
-                                            cup_name,
-                                            mode=mode,
-                                            reuse=reuse_mode)
+                ret, _ = await rk.matchup_role(message,
+                                               message.author.server,
+                                               message.role_mentions[0],
+                                               message.role_mentions[1],
+                                               cat_id,
+                                               cup_name,
+                                               mode=mode,
+                                               reuse=reuse_mode)
             elif len(message.mentions) == 2:
-                ret = await rk.matchup_cpt (message,
-                                            message.author.server,
-                                            message.mentions[0],
-                                            message.mentions[1],
-                                            cat_id,
-                                            cup_name,
-                                            mode=mode,
-                                            reuse=reuse_mode)
+                ret, _ = await rk.matchup_cpt (message,
+                                               message.author.server,
+                                               message.mentions[0],
+                                               message.mentions[1],
+                                               cat_id,
+                                               cup_name,
+                                               mode=mode,
+                                               reuse=reuse_mode)
             elif len(parts) >= 2:
-                ret = await rk.matchup_team(message,
-                                            message.author.server,
-                                            parts[0],
-                                            parts[1],
-                                            cat_id,
-                                            cup_name,
-                                            mode=mode,
-                                            reuse=reuse_mode)
+                ret, _ = await rk.matchup_team(message,
+                                               message.author.server,
+                                               parts[0],
+                                               parts[1],
+                                               cat_id,
+                                               cup_name,
+                                               mode=mode,
+                                               reuse=reuse_mode)
             else:
                 await rk.reply(message,
                                'Too much or not enough arguments:\n'
