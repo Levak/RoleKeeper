@@ -26,6 +26,57 @@ from inputs import *
 
 from locale_s import tr
 
+class MatchFFA:
+    def __init__(self, round, match, players):
+        self.round = round
+        self.match = match
+        self.players = players
+
+        self.mode_title = tr('ffa_title')
+        self.mode_intro = tr('ffa_welcome_message')
+
+        self.url = None
+
+    def is_in_match(self, member):
+        for player in self.players:
+            if player.member and player.member.id == member.id:
+                return True
+        return False
+
+    def is_done(self):
+        return True
+
+    async def begin(self, handle):
+
+        intro = self.mode_intro.format(
+            m_players=', '.join([ p.member.mention if p.member else md_inline_code(p.nickname) \
+                                  for p in self.players ]),
+            round=self.round,
+            match=self.match,
+            match_result_upload=\
+            tr('match_result_upload').format(url=self.url) if self.url else '')
+
+        await handle.embed(self.mode_title, intro, 0)
+
+        await handle.broadcast('match_created', ':sparkle: Match created: `{match_id}`\n'\
+                               .format(match_id=handle.channel.name))
+
+
+    async def ban_map(self, handle, banned_map, force=False):
+        return False
+
+    async def pick_map(self, handle, picked_map, force=False):
+        return False
+
+    async def choose_side(self, handle, chosen_side, force=False):
+        return False
+
+    async def undo_map(self, handle):
+        return False
+
+    async def close_match(self, handle):
+        return False
+
 class Match:
     def __init__(self, teamA, teamB, maps, emotes=None):
         self.teams = [ teamA, teamB ]

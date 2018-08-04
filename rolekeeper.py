@@ -31,7 +31,7 @@ import datetime
 import json
 
 from team import Team, TeamCaptain, Cup, Group
-from match import Match, MatchBo2, MatchBo3, MatchBo5
+from match import Match, MatchBo2, MatchBo3, MatchBo5, MatchFFA
 from inputs import *
 from db import open_db
 from handle import Handle
@@ -103,8 +103,38 @@ class RoleKeeper:
     def parse_header(self, header):
         return { e: header.index(e) for e in header }
 
+    # Parse players from CSV file
+    def parse_players(self, csvfile, cup=None, groups={}):
+        players = []
+
+        if csvfile:
+            dialect = csv.Sniffer().sniff(csvfile.read(1024), delimiters=',;')
+            csvfile.seek(0)
+            reader = csv.reader(csvfile, dialect)
+
+            header = None
+
+            for row in reader:
+                # Skip empty lines and lines starting with #
+                if len(row) <= 0 or row[0].startswith('#'):
+                    # If we didn't parse header yet, first comment is usually it
+                    if not header:
+                        row[0] = row[0][1:] # Delete the '#'
+                        header = self.parse_header(row)
+                    continue
+
+                # If we didn't parse header yet, it's the first line
+                if not header:
+                    header = self.parse_header(row)
+                    continue
+
+                nickname = row[header['Player']].strip()
+                players.append(nickname)
+
+        return players
+
     # Parse members from CSV file
-    def parse_teams(self, server, csvfile, cup=None, groups={}):
+    def parse_teams(self, csvfile, cup=None, groups={}):
         captains = {}
 
         if csvfile:
@@ -129,7 +159,10 @@ class RoleKeeper:
                     continue
 
                 discord_id = row[header['discord']].strip()
-                team_name = row[header['team_name']].strip()
+                if 'team_name' in header:
+                    team_name = row[header['team_name']].strip()
+                else:
+                    team_name = row[header['teamname']].strip()
                 nickname = row[header['nickname']].strip()
 
                 # Remove extra spaces around the bang (#) sign
@@ -305,7 +338,7 @@ class RoleKeeper:
 
         await self.handle_member_join(member)
 
-    def get_role_name(self, role_id, arg=None):
+    def get_role_name(self, role_id, arg=None, arg2=None):
         if role_id not in self.config['roles']:
             print ('WARNING: Missing configuration for role "{}"'.format(role_id))
             return None
@@ -323,7 +356,7 @@ class RoleKeeper:
             role_name = role_cfg
 
         if arg:
-            role_name = role_name.format(arg)
+            role_name = role_name.format(arg, arg2)
 
         return role_name
 
@@ -716,12 +749,14 @@ class RoleKeeper:
 
         # Change nickname of team captain
         if db['with_roles']:
-            nickname = '{nick}'\
-                .format(nick=captain.nickname)
+            nickname = captain.nickname
         else: # TODO format in config
-            nickname = '{nick} ({team})'\
-                .format(nick=captain.nickname,
-                        team=captain.team_name)
+            try:
+                nickname = self.config['nickname']\
+                               .format(nick=captain.nickname,
+                                       team=captain.team_name)
+            except:
+                nickname = captain.nickname
 
         # Maximum of 32 characters for the nickname
         space_left = 32 - len(nickname)
@@ -924,6 +959,30 @@ class RoleKeeper:
         return await self.matchup(message, server, teamA, teamB, cat_id, cup_name,
                                   mode=mode, flip_coin=flip_coin, reuse=reuse, url=url)
 
+    # Get a unique channel name
+    async def new_channel_name(self, server, message, db, base_name, reuse=REUSE_UNK):
+        channel_name = base_name
+        channel = None
+        index = 1
+        index_str = ''
+
+        while True:
+            channel_name = '{}{}'.format(base_name, index_str)
+            channel = discord.utils.get(server.channels, name=channel_name)
+
+            # Channel already exists, but we do not know if we should reuse it
+            if (channel or channel_name in db['matches']) and reuse == self.REUSE_UNK:
+                await self.reply(message, 'Room `{}` already exists!\nAdd `reuse` in the command to reuse the same channel or `new` to create a new one.'.format(channel_name))
+                return None, None
+
+            if not (channel or channel_name in db['matches']) or reuse == self.REUSE_YES:
+                break
+
+            index = index + 1
+            index_str = '_r{}'.format(index)
+
+        return channel_name, channel
+
     # Create a match against 2 team handles
     # 1. Create the text channel
     # 2. Add permissions to read/send to both teams, and the judge
@@ -961,22 +1020,10 @@ class RoleKeeper:
         read_perms = discord.PermissionOverwrite(read_messages=True, send_messages=True)
         no_perms = discord.PermissionOverwrite(read_messages=False)
 
-        index = 1
-        index_str = ''
-        while True:
-            channel_name = 'match_{}_vs_{}{}'.format(teamA_name_safe, teamB_name_safe, index_str)  # TODO cup
-            channel = discord.utils.get(server.channels, name=channel_name)
-
-            # Channel already exists, but we do not know if we should reuse it
-            if (channel or channel_name in db['matches']) and reuse == self.REUSE_UNK:
-                await self.reply(message, 'Room `{}` already exists!\nAdd `reuse` in the command to reuse the same channel or `new` to create a new one.'.format(channel_name))
-                return False, None
-
-            if not (channel or channel_name in db['matches']) or reuse == self.REUSE_YES:
-                break
-
-            index = index + 1
-            index_str = '_r{}'.format(index)
+        channel_name = 'match_{}_vs_{}'.format(teamA_name_safe, teamB_name_safe)  # TODO cup
+        channel_name, channel = await self.new_channel_name(server, message, db, channel_name, reuse=reuse)
+        if not channel_name:
+            return False, None
 
         category = None
         if 'categories' in self.config['servers'][server.name] \
@@ -1039,6 +1086,135 @@ class RoleKeeper:
         await match.begin(handle)
 
         return True, channel_name
+
+    # Matchup for FFA cups - only text chat, no bot
+    async def matchup_ffa(self, message, server, round, match_num, cat_id, cup_name, reuse=REUSE_UNK, url=None, team_names=None, players_csv=None):
+        db, error = self.get_cup_db(server, cup_name)
+        if error:
+            await self.reply(message, error)
+            return False, None
+
+        # Search for all players
+        players = []
+        if players_csv:
+            # Fetch the CSV file and parse it
+            csv = await self.fetch_text_attachment(players_csv)
+
+            if not csv:
+                return False
+
+            csv = io.StringIO(csv)
+            player_names = self.parse_players(csv)
+            csv.close()
+
+            for player_name in player_names:
+                found = False
+                for captain in db['captains'].values():
+                    if player_name == captain.nickname:
+                        players.append(captain)
+                        found = True
+                        break
+
+                if not found:
+                    await self.reply(message, ':warning: Cannot find player "{}"'.format(player_name))
+
+        elif team_names:
+
+            for team_name in team_names:
+                found = False
+                for captain in db['captains'].values():
+                    if captain.team and team_name == captain.team.name:
+                        players.append(captain)
+                        found = True
+                        break
+
+                if not found:
+                    await self.reply(message, ':warning: Cannot find player from team "{}"'.format(team_name))
+
+        else:
+            await self.reply(message, 'A FFA match with no player? )))')
+            return False, None
+
+        match = MatchFFA(round, match_num, players)
+
+        if url:
+            match.url = url
+
+        # Create the text channel
+        round_safe = sanitize_input(translit_input(round))
+        match_safe = sanitize_input(translit_input(match_num))
+        topic = 'Round {} - Match {}'.format(round, match_num)
+
+        ref_role = self.get_special_role(server, 'referee')
+        coref_role = self.get_special_role(server, 'coreferee')
+
+        read_perms = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        no_perms = discord.PermissionOverwrite(read_messages=False)
+
+        channel_name = 'match_{}_{}'.format(round_safe, match_safe)  # TODO cup
+        channel_name, channel = await self.new_channel_name(server, message, db, channel_name, reuse=reuse)
+        if not channel_name:
+            return False, None
+
+        category = None
+        if 'categories' in self.config['servers'][server.name] \
+           and cat_id in self.config['servers'][server.name]['categories']:
+            cat_name = self.config['servers'][server.name]['categories'][cat_id]
+            for ch in server.channels:
+                if cat_name.lower() in ch.name.lower():
+                    category = ch
+
+        if cat_id and len(cat_id) > 0 and not category:
+            await self.reply(message, ':warning: Cannot find category with ID "{}"'.format(cat_id))
+
+        if not channel:
+            try:
+                overrides = [
+                    (server.default_role, no_perms),
+                    (server.me, read_perms),
+                    (ref_role, read_perms)
+                ]
+
+                if coref_role:
+                    overrides.append( (coref_role, read_perms) )
+
+                for captain in players:
+                    if captain.member:
+                        overrides.append( (captain.member, read_perms) )
+
+                channel = await self.client.create_channel(
+                    server,
+                    channel_name,
+                    *overrides,
+                    category=category)
+
+                print('Created channel "<{channel}>"'\
+                      .format(channel=channel_name))
+            except:
+                print('WARNING: Failed to create channel "<{channel}>"'\
+                      .format(channel=channel_name))
+
+            try:
+                await self.client.edit_channel(
+                    channel,
+                    topic=topic)
+
+                print('Set topic for channel "<{channel}>" to "{topic}"'\
+                      .format(channel=channel_name, topic=topic))
+            except:
+                print('WARNING: Failed to set topic for channel "<{channel}>"'\
+                      .format(channel=channel_name))
+        else:
+            print('Reusing existing channel "<{channel}>"'\
+                  .format(channel=channel_name))
+
+        # Start the match
+        db['matches'][channel_name] = match
+        handle = Handle(self, channel=channel)
+        await match.begin(handle)
+
+        return True, channel_name
+
 
     # Returns if a member is a team captain in the given channel
     def is_captain_in_match(self, member, channel, force=False):
@@ -1595,7 +1771,7 @@ class RoleKeeper:
                 return False
 
             csv = io.StringIO(csv)
-            captains, groups = self.parse_teams(server, csv)
+            captains, groups = self.parse_teams(csv)
             csv.close()
 
             # Save it for later in a scratchpad
@@ -2009,7 +2185,7 @@ class RoleKeeper:
             return False
 
         csv = io.StringIO(csv)
-        captains, groups = self.parse_teams(server, csv, cup=db['cup'], groups=db['groups'])
+        captains, groups = self.parse_teams(csv, cup=db['cup'], groups=db['groups'])
         csv.close()
 
         for group_id, group in groups.items():

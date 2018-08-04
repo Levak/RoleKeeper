@@ -7,7 +7,7 @@
         "defends": "464848886851174420"
     },
 
-    "lang": "russian",
+    "lang": "english",
 
     "roles": {
         "referee": { "name": "Referees" },
@@ -17,6 +17,8 @@
         "group": { "name": "Group {}" },
         "team": { "name": "{} team", "color": "orange" }
     },
+
+    "nickname": "{nick} ({team})",
 
     "driver": {
         "refresh_period": 60,

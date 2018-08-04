@@ -68,6 +68,27 @@ For instance, team A types `!ban Yard` which will then ban the map _Yard_ from t
 {match_result_upload}
 """,
 
+    'ffa_title': 'Free-For-All',
+    'ffa_welcome_message': """
+Welcome {m_players}!
+
+This text channel will be used by the judge and players to exchange anything about the round {round} match {match}.
+
+:warning: **Screenshot the scoreboard**
+Once the match ends, at least one player from the room is required to upload a screenshot of the end scoreboard in this channel. Then, the judge will be able to enter the results (manually) on the website. No screenshot of the game room means no match was played. If you want to advance in the cup or secure your position, be safe and always take a screenshot ready to be uploaded.
+
+**Remarks regarding crashes, disconnects or rage-quits:**
+ • If you are not visible on the end scoreboard (no matter the reason, disconnect, crash, RQ), you get 0 point for that match;
+ • At the end of the cup, if you did not get any point, you receive a technical loss (no reward);
+ • There will be no restart of the game room what so ever.
+{match_result_upload}
+
+**The tournament server will soon invite you to a game room.**
+Make sure to accept the invitation! No worry if you are warming up in another game room, the tournament server will kick you from it ))
+
+Good luck!
+""",
+
     'match_result_upload': """
 To upload the match results, open the link below, click "Results" and enter the scores:
 {url}

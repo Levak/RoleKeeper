@@ -158,12 +158,12 @@ async def on_message(message):
     args = args.strip()
 
     reuse_mode = RoleKeeper.REUSE_UNK
-    if ' reuse' in args:
+    if args.endswith(' reuse'):
         reuse_mode = RoleKeeper.REUSE_YES
-        args = args.replace(' reuse', '', 1)
-    elif ' new' in args:
+        args = args[:-6]
+    elif args.endswith(' new'):
         reuse_mode = RoleKeeper.REUSE_NO
-        args = args.replace(' new', '', 1)
+        args = args[:-4]
 
     parts = args.split()
 
@@ -407,6 +407,58 @@ async def on_message(message):
                                'Too much or not enough arguments:\n'
                                '```{command} @xxx @yyy [>category] [cup] [new/reuse]```'\
                                .format(command=command))
+
+
+
+        elif is_ref and command == '!ffa':
+            cat_id = parts[-1][1:] \
+                     if len(parts) > 2 and parts[-1].startswith('>') \
+                        else parts[-2][1:] \
+                             if len(parts) > 3 and parts[-2].startswith('>') \
+                                else None
+
+            cup_name = parts[-1][1:] \
+                       if len(parts) > 3 and parts[-1].startswith('?') \
+                          else parts[-2][1:] \
+                               if len(parts) > 2 and parts[-2].startswith('?') \
+                                  else ''
+
+            round=parts[0] if len(parts) > 0 else None
+            match=parts[1] if len(parts) > 1 else None
+
+            if round and match and len(message.mentions) > 0:
+                ret, _ = await rk.matchup_ffa (message,
+                                               message.author.server,
+                                               round,
+                                               match,
+                                               cat_id,
+                                               cup_name,
+                                               players=message.mentions,
+                                               reuse=reuse_mode)
+            elif round and match and len(message.attachments) > 0:
+                ret, _ = await rk.matchup_ffa (message,
+                                               message.author.server,
+                                               round,
+                                               match,
+                                               cat_id,
+                                               cup_name,
+                                               players_csv=message.attachments[0],
+                                               reuse=reuse_mode)
+            elif round and match and len(parts) > 2:
+                end = -2 if len(cup_name) > 0 and cat_id else -1 if len(cup_name) > 0 or cat_id else 0
+                names = [ p.replace(',', '') for p in (parts[2:end] if end < 0 else parts[2:]) ]
+                ret, _ = await rk.matchup_ffa (message,
+                                               message.author.server,
+                                               round,
+                                               match,
+                                               cat_id,
+                                               cup_name,
+                                               team_names=names,
+                                               reuse=reuse_mode)
+            else:
+                await rk.reply(message,
+                               'Too much or not enough arguments:\n'
+                               '```!ffa round match [@member1 @member2 ...|player1, player2, ...] [>category] [?cup] [new/reuse] [// Players.csv]```')
 
 
 
