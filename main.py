@@ -134,7 +134,7 @@ async def on_message(message):
         return
 
     # Bypass command line when message is in a captain hunt channel
-    _db, _error = rk.find_cup_db(message.author.server, hunt=message.channel)
+    _db, _error, _ = rk.find_cup_db(message.author.server, hunt=message.channel)
     if not _error and not is_ref:
         await rk.on_hunt_message(message, _db)
         return
@@ -482,7 +482,7 @@ async def on_message(message):
                     try:
                         if len(message.attachments) > 0:
                             for attachment in message.attachments:
-                                attach = rk.fetch_text_attachment(attachment)
+                                attach = await rk.fetch_text_attachment(attachment)
                                 if attach:
                                     await rk.send(channel, attach)
                         else:
@@ -559,6 +559,15 @@ async def on_message(message):
             else:
                 await rk.reply(message,
                                'Not enough arguments:\n```!stream channel_id [@streamer]```')
+
+        elif command == '!unstream' and is_streamer:
+            if len(parts) > 0:
+                ret = await rk.unstream_match(message,
+                                              parts[0],
+                                              message.mentions[0] if len(message.mentions) > 0 else None)
+            else:
+                await rk.reply(message,
+                               'Not enough arguments:\n```!unstream channel_id [@streamer]```')
 
 
         # Unknown command, probably not for us:

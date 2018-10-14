@@ -31,15 +31,18 @@ class CustomRole:
 
 ### Class that holds information about a cup
 class Cup(CustomRole):
-    def __init__(self, name, role, maps):
+    def __init__(self, name, role, maps_key):
         CustomRole.__init__(self, name, role)
-        self.maps = maps
+        self.maps_key = maps_key
 
 ### Class that holds information about a group
 class Group(CustomRole):
     def __init__(self, id, name, role):
         self.id = id
         CustomRole.__init__(self, name, role)
+
+    def __str__(self):
+        return self.name
 
 ### Class that holds information about a team
 class Team(CustomRole):

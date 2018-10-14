@@ -85,13 +85,15 @@ class EsportsDriver:
     async def resume(self, server, bot, db):
         started = self.started
 
-        handle = self.handle
-        if handle:
-            await handle.resume(server, bot)
+        handle = None
+        if hasattr(self, 'handle') and self.handle:
+            handle = self.handle
+            await self.handle.resume(server, bot)
 
-        status_handle = self.status_handle
-        if status_handle:
-            await status_handle.resume(server, bot)
+        status_handle = None
+        if hasattr(self, 'status_handle') and self.status_handle:
+            status_handle = self.status_handle
+            await self.status_handle.resume(server, bot)
 
         # Recreate the object
         self.__init__(bot, db, self.url, self.cup_name, self.cat_id)
@@ -422,7 +424,7 @@ class EsportsDriver:
             await asyncio.wait(co_matches)
             print('End of parsing')
         await self.update_status()
-        client.close()
+        await client.close()
 
     ## Parse the match page to know who is banning first
     async def parse_match(self, client, match_url, match_id, team1_name, team2_name):

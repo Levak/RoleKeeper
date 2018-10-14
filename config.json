@@ -8,6 +8,7 @@
     },
 
     "lang": "english",
+    "autosave": 3600,
 
     "roles": {
         "referee": { "name": "Referees" },
@@ -27,12 +28,19 @@
         "autodelete": true
     },
 
+    "carousel": {
+        "save_path": ""
+    },
+
     "maps": {
         "ptb_oc": [ "D-17", "District", "Destination", "Bridges", "Palace", "Pyramid", "Yard" ],
         "ctf": [ "Quarry", "Breach", "Construction", "Deposit", "Longway" ],
         "ptb": [ "Yard", "D-17", "District", "Destination", "Bridges", "Palace", "Pyramid" ],
         "ctf_ptb": [ "Yard", "D-17", "Factory", "District", "Destination", "Bridges", "Palace", "Pyramid",
                      "Quarry", "Breach", "Construction", "Deposit", "Longway" ],
+
+        "ptb2": [ "ptb_afghan", "ptb_d17", "ptb_district", "ptb_destination", "ptb_bridges",
+                  "ptb_palace", "ptb_pyramid" ],
 
         "test2": [ "A", "B" ],
         "test3": [ "A", "B", "C" ],

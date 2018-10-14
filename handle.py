@@ -38,9 +38,9 @@ class Handle:
 
         if self.member:
             try:
-                db, error = bot.find_cup_db(self.member.server, captain=str(self.member))
+                db, error, _ = bot.find_cup_db(self.member.server, captain=self.member.id)
                 if not error:
-                    self.team = db['captains'][str(self.member)].team ## TODO UUID
+                    self.team = db['captains'][self.member.id].team
             except KeyError:
                 pass
 
@@ -131,6 +131,17 @@ class Handle:
                 return
             await asyncio.sleep(10)
             return await self.send(msg, err_count=err_count)
+
+    async def send_file(self, file, name, msg, err_count=0):
+        try:
+            return await self.bot.client.send_file(self.channel, file, filename=name, content=msg)
+        except discord.errors.HTTPException as e:
+            print('WARNING: HTTPexception: {}'.format(str(e)))
+            err_count += 1
+            if err_count > 5:
+                return
+            await asyncio.sleep(10)
+            return await self.send_file(file, name, msg, err_count=err_count)
 
     async def edit(self, msg, err_count=0):
         try:

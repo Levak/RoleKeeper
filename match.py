@@ -20,11 +20,12 @@
 # IN THE SOFTWARE.
 
 import asyncio
-
+import io
 from difflib import SequenceMatcher
-from inputs import *
 
+from inputs import *
 from locale_s import tr
+from carousel import Carousel
 
 class MatchFFA:
     def __init__(self, round, match, players):
@@ -110,20 +111,30 @@ class Match:
         self.last_picked = False
 
         self.url = None
+        self.carousel = None
+        self.streamed = False
 
     ## Override pickle serialization
     def __getstate__(self):
         state = dict(self.__dict__)
 
-        # We cannot serialize Discord.Message because of WeakSet
-        # thus, remove them
-        state['status_handle'] = None
-        state['turn_handle'] = None
+        # We cannot serialize this object, thus, remove it
+        state['carousel'] = None
 
         return state
 
+    async def resume(self, server, bot, db):
+        if hasattr(self, 'status_handle') and self.status_handle:
+            await self.status_handle.resume(server, bot)
+
+        if hasattr(self, 'turn_handle') and self.turn_handle:
+            await self.turn_handle.resume(server, bot)
+
+        if hasattr(self, 'streamed') and self.streamed:
+            self.carousel = Carousel(self, bot)
+
     def is_in_match(self, member):
-        if self.teamA.role and self.teamB.role:
+        if self.teamA.role and self.teamB.role: # TODO fix when team got replaced live
             return self.teamA.role in member.roles \
                 or self.teamB.role in member.roles
         else:
@@ -142,9 +153,9 @@ class Match:
         try:
             return next(m for m in self.maps \
                         if SequenceMatcher(None,
-                                           sanitize_input(translit_input(m)),
+                                           sanitize_input(translit_input(tr(m))),
                                            sanitize_input(translit_input(map_name))
-                                       ).ratio() > 0.8)
+                                       ).ratio() > 0.7)
         except StopIteration:
             return None
 
@@ -322,13 +333,17 @@ class Match:
 
     async def status(self, handle):
         msg = '\n'.join([ '{em} {fmt}{map}{fmt}'\
-                          .format(map=m,
+                          .format(map=tr(m),
                                   fmt='~~' if m in self.banned_maps else '**' if m in self.picked_maps else '_',
                                   em=':hammer:' if m in self.banned_maps else ':point_right:' if m in self.picked_maps else ':grey_question:')\
                           for m in self.maps ])
 
         if self.turn_handle:
-            await self.turn_handle.delete()
+            try:
+                await self.turn_handle.delete()
+            except:
+                print('WARNING: Failed to delete previous turn message')
+                pass
             self.turn_handle = None
 
         title = '{title} ({i}/{n}):'\
@@ -360,7 +375,46 @@ class Match:
                         extra=self.get_turn_info(self.sequence[self.turn]))
 
             self.turn_handle = handle.clone()
-            self.turn_handle.message = await handle.send(turn)
+            self.turn_handle.message = None
+
+            if self.streamed:
+                self.turn_handle.message = await self.send_carousel(handle, turn)
+
+            if not self.turn_handle.message:
+                self.turn_handle.message = await handle.send(turn)
+
+    async def send_carousel(self, handle, text):
+        handle = self.status_handle if not handle else handle
+        message = None
+
+        if self.carousel and handle:
+            self.carousel.update_status()
+            self.carousel.save_status()
+
+            if False: # TODO later add config
+                buffer = io.BytesIO()
+                status = self.carousel.get_status()
+                status.save(buffer, "PNG")
+                buffer.seek(0)
+
+                message = await handle.send_file(buffer,
+                                                 'status-{}.png'.format(handle.channel.name),
+                                                 text)
+                buffer.close()
+
+        return message
+
+    async def stream(self, bot):
+        streamed_before = self.streamed
+        self.streamed = True
+        self.carousel = Carousel(self, bot)
+
+        if not streamed_before:
+            await self.status(self.turn_handle.clone())
+
+    async def unstream(self):
+        self.streamed = False
+
 
     async def summary(self, handle):
         await handle.send('{title}\n\n'
@@ -372,7 +426,7 @@ class Match:
                                   map=tr('match_map'),
                                   good_luck=tr('match_good_luck'),
                                   warning=tr('match_warning'),
-                                  map1=md_bold(self.picked_maps[0]),
+                                  map1=md_bold(tr(self.picked_maps[0])),
                                   side1=self.to_side(self.picked_sides[0]),
                                   team1=md_normal(self.sequence[-1][0].name),
                                   url=self.url if self.url else ''))
@@ -382,7 +436,7 @@ class Match:
                                ' - Map: {map1} ({team1} {side1})\n'\
                                .format(teamA=md_bold(self.teamA.name),
                                        teamB=md_bold(self.teamB.name),
-                                       map1=md_bold(self.picked_maps[0]),
+                                       map1=md_bold(tr(self.picked_maps[0])),
                                        side1=self.to_side(self.picked_sides[0]),
                                        team1=md_normal(self.sequence[-1][0].name),
                                        match_id=md_inline_code(handle.channel.name)))
@@ -394,7 +448,7 @@ class Match:
             return '   {tmap} {id}: {map}'\
                 .format(tmap=tr('match_map'),
                         id=len(self.picked_sides) + 1,
-                        map=md_bold(map_side))
+                        map=md_bold(tr(map_side)))
         else:
             return ''
 
@@ -435,8 +489,8 @@ class MatchBo2(Match):
                                   warning=tr('match_warning'),
                                   teamA=md_bold(self.teamA.name),
                                   teamB=md_bold(self.teamB.name),
-                                  map1=md_bold(self.picked_maps[0]),
-                                  map2=md_bold(self.picked_maps[1]),
+                                  map1=md_bold(tr(self.picked_maps[0])),
+                                  map2=md_bold(tr(self.picked_maps[1])),
                                   side1=self.to_side(self.picked_sides[0]),
                                   side2=self.to_side(self.picked_sides[1]),
                                   team1=md_normal(self.sequence[-2][0].name),
@@ -449,8 +503,8 @@ class MatchBo2(Match):
                                ' - Map 2: {map2} ({team2} {side2})\n'\
                           .format(teamA=md_bold(self.teamA.name),
                                   teamB=md_bold(self.teamB.name),
-                                  map1=md_bold(self.picked_maps[0]),
-                                  map2=md_bold(self.picked_maps[1]),
+                                  map1=md_bold(tr(self.picked_maps[0])),
+                                  map2=md_bold(tr(self.picked_maps[1])),
                                   side1=self.to_side(self.picked_sides[0]),
                                   side2=self.to_side(self.picked_sides[1]),
                                   team1=md_normal(self.sequence[-2][0].name),
@@ -494,9 +548,9 @@ class MatchBo3(Match):
                                   tiebreaker=tr('match_tiebreaker_map'),
                                   good_luck=tr('match_good_luck'),
                                   warning=tr('match_warning'),
-                                  map1=md_bold(self.picked_maps[0]),
-                                  map2=md_bold(self.picked_maps[1]),
-                                  map3=md_bold(self.picked_maps[2]),
+                                  map1=md_bold(tr(self.picked_maps[0])),
+                                  map2=md_bold(tr(self.picked_maps[1])),
+                                  map3=md_bold(tr(self.picked_maps[2])),
                                   side1=self.to_side(self.picked_sides[0]),
                                   side2=self.to_side(self.picked_sides[1]),
                                   side3=self.to_side(self.picked_sides[2]),
@@ -512,16 +566,16 @@ class MatchBo3(Match):
                                ' - Tie-breaker map: {map3} ({team3} {side3})\n'\
                           .format(teamA=md_bold(self.teamA.name),
                                   teamB=md_bold(self.teamB.name),
-                                  map1=md_bold(self.picked_maps[0]),
-                                  map2=md_bold(self.picked_maps[1]),
-                                  map3=md_bold(self.picked_maps[2]),
+                                  map1=md_bold(tr(self.picked_maps[0])),
+                                  map2=md_bold(tr(self.picked_maps[1])),
+                                  map3=md_bold(tr(self.picked_maps[2])),
                                   side1=self.to_side(self.picked_sides[0]),
                                   side2=self.to_side(self.picked_sides[1]),
                                   side3=self.to_side(self.picked_sides[2]),
                                   team1=md_normal(self.sequence[-3][0].name),
                                   team2=md_normal(self.sequence[-2][0].name),
                                   team3=md_normal(self.sequence[-1][0].name),
-                                  match_id=md_bold(handle.channel.name)))
+                                  match_id=md_inline_code(handle.channel.name)))
 
 class MatchBo5(Match):
     def __init__(self, teamA, teamB, maps, emotes=None):
@@ -559,11 +613,11 @@ class MatchBo5(Match):
                                   tiebreaker=tr('match_tiebreaker_map'),
                                   good_luck=tr('match_good_luck'),
                                   warning=tr('match_warning'),
-                                  map1=md_bold(self.picked_maps[0]),
-                                  map2=md_bold(self.picked_maps[1]),
-                                  map3=md_bold(self.picked_maps[2]),
-                                  map4=md_bold(self.picked_maps[3]),
-                                  map5=md_bold(self.picked_maps[4]),
+                                  map1=md_bold(tr(self.picked_maps[0])),
+                                  map2=md_bold(tr(self.picked_maps[1])),
+                                  map3=md_bold(tr(self.picked_maps[2])),
+                                  map4=md_bold(tr(self.picked_maps[3])),
+                                  map5=md_bold(tr(self.picked_maps[4])),
                                   side1=self.to_side(self.picked_sides[0]),
                                   side2=self.to_side(self.picked_sides[1]),
                                   side3=self.to_side(self.picked_sides[2]),
@@ -585,11 +639,11 @@ class MatchBo5(Match):
                                ' - Tie-breaker map: {map5} ({team5} {side5})\n'\
                           .format(teamA=md_bold(self.teamA.name),
                                   teamB=md_bold(self.teamB.name),
-                                  map1=md_bold(self.picked_maps[0]),
-                                  map2=md_bold(self.picked_maps[1]),
-                                  map3=md_bold(self.picked_maps[2]),
-                                  map4=md_bold(self.picked_maps[3]),
-                                  map5=md_bold(self.picked_maps[4]),
+                                  map1=md_bold(tr(self.picked_maps[0])),
+                                  map2=md_bold(tr(self.picked_maps[1])),
+                                  map3=md_bold(tr(self.picked_maps[2])),
+                                  map4=md_bold(tr(self.picked_maps[3])),
+                                  map5=md_bold(tr(self.picked_maps[4])),
                                   side1=self.to_side(self.picked_sides[0]),
                                   side2=self.to_side(self.picked_sides[1]),
                                   side3=self.to_side(self.picked_sides[2]),
@@ -600,4 +654,4 @@ class MatchBo5(Match):
                                   team3=md_normal(self.sequence[-3][0].name),
                                   team4=md_normal(self.sequence[-2][0].name),
                                   team5=md_normal(self.sequence[-1][0].name),
-                                  match_id=md_bold(handle.channel.name)))
+                                  match_id=md_inline_code(handle.channel.name)))
