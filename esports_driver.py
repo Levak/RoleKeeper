@@ -23,6 +23,7 @@ import aiohttp
 import asyncio
 import traceback
 import urllib
+
 import datetime
 
 from handle import Handle
@@ -271,14 +272,16 @@ class EsportsDriver:
                     await self.update_status(force=True)
 
                 item = await self.create_queue.get()
-                match_id, match_url, team1_name, team2_name, mode, time = \
-                    item[0], item[1], item[2], item[3], item[4], item[5]
+                match_id, match_url, team1_name, team2_name, team1_icon, team2_icon, mode, time = \
+                    item[0], item[1], item[2], item[3], item[4], item[5], item[6], item[7]
 
                 await self.garbage_collect()
 
                 print (match_id, team1_name, team2_name, mode, time)
 
-                await self.create_match(match_id, match_url, team1_name, team2_name, mode, time)
+                await self.create_match(match_id, match_url,
+                                        team1_name, team2_name, team1_icon, team2_icon,
+                                        mode, time)
 
             except asyncio.CancelledError:
                 break
@@ -488,7 +491,45 @@ class EsportsDriver:
         else:
             print('No mode selected for match {}, using best-of-1'.format(match_id))
 
-        self.create_queue.put_nowait( (match_id, match_url, team1_name, team2_name, mode, date) )
+        # Fetch team icons
+        team1_icon = ""
+        team2_icon = ""
+
+        teams_dl = match_dom.findAll('div', attrs={'class': u'team'})
+        teamA_d = teams_dl[0].find('div', attrs={'class': u'match-data__title'}) \
+                  if len(teams_dl) > 1 else None
+        teamB_d = teams_dl[1].find('div', attrs={'class': u'match-data__title'}) \
+                  if len(teams_dl) > 1 else None
+        teamA_n = teamA_d.string.strip() if teamA_d else ''
+        teamB_n = teamB_d.string.strip() if teamB_d else ''
+
+        teamA_id = teams_dl[0].find('div', attrs={'class': u'team__img'}) \
+                   if len(teams_dl) > 1 else None
+        teamB_id = teams_dl[1].find('div', attrs={'class': u'team__img'}) \
+                   if len(teams_dl) > 1 else None
+
+        teamA_im = teamA_id.find('img') if teamA_id else None
+        teamB_im = teamB_id.find('img') if teamB_id else None
+        teamA_url = urllib.parse.urljoin(match_url, teamA_im['src']) if teamA_im else ''
+        teamB_url = urllib.parse.urljoin(match_url, teamB_im['src']) if teamB_im else ''
+
+        print('dl', teams_dl)
+        print('d', teamA_d)
+        print('n', teamA_n)
+        print('id', teamA_id)
+        print('im', teamA_im)
+        print('url', teamA_url)
+
+        if teamA_n == team1_name:
+            team1_icon = teamA_url
+            team2_icon = teamB_url
+        else:
+            team1_icon = teamB_url
+            team2_icon = teamA_url
+
+        self.create_queue.put_nowait( (match_id, match_url,
+                                       team1_name, team2_name, team1_icon, team2_icon,
+                                       mode, date) )
 
     ## Get the associated Rolekeeper match for given team names and add it to
     ## internal driver cache if found.
@@ -544,7 +585,9 @@ class EsportsDriver:
             self.db['matches'][channel_name].match_id = match_id
 
     ## Create the match room in Discord
-    async def create_match(self, match_id, match_url, team1_name, team2_name, mode, time):
+    async def create_match(self, match_id, match_url,
+                           team1_name, team2_name, team1_icon, team2_icon,
+                           mode, time):
         captainA = None
         try:
             captainA = next(c for did, c in self.db['captains'].items() if c.team_name == team1_name)
@@ -580,6 +623,9 @@ class EsportsDriver:
             if res:
                 # Cache the match
                 self.cache_match(match_id, channel_name)
+
+                self.db['matches'][channel_name].teamA_icon = team1_icon
+                self.db['matches'][channel_name].teamB_icon = team2_icon
 
         except:
             await self.match_error(match_id, 'Error creating match {} vs {}'\

@@ -33,6 +33,7 @@ class MatchFFA:
         self.match = match
         self.players = players
 
+        self.mode = 'FFA'
         self.mode_title = tr('ffa_title')
         self.mode_intro = tr('ffa_welcome_message')
 
@@ -83,6 +84,7 @@ class Match:
         self.teams = [ teamA, teamB ]
         self.teamA = teamA
         self.teamB = teamB
+
         self.maps = maps
         self.banned_maps = []
         self.picked_maps = []
@@ -90,6 +92,7 @@ class Match:
         self.turn = 0
         self.emotes = emotes
 
+        self.mode = 'BO1'
         self.mode_title = tr('bo1_title')
         self.mode_intro = tr('bo1_welcome_message')
 
@@ -111,6 +114,10 @@ class Match:
         self.last_picked = False
 
         self.url = None
+
+        self.teamA_icon = None
+        self.teamB_icon = None
+
         self.carousel = None
         self.streamed = False
 
@@ -458,6 +465,7 @@ class MatchBo2(Match):
 
         assert len(self.maps) >= 2, 'Not enough maps'
 
+        self.mode = 'BO2'
         self.mode_title = tr('bo2_title')
         self.mode_intro = tr('bo2_welcome_message')
 
@@ -517,6 +525,7 @@ class MatchBo3(Match):
 
         assert len(self.maps) >= 5, 'Not enough maps'
 
+        self.mode = 'BO3'
         self.mode_title = tr('bo3_title')
         self.mode_intro = tr('bo3_welcome_message')
 
@@ -583,6 +592,7 @@ class MatchBo5(Match):
 
         assert len(self.maps) >= 5, 'Not enough maps'
 
+        self.mode = 'BO5'
         self.mode_title = tr('bo5_title')
         self.mode_intro = tr('bo5_welcome_message')
 
