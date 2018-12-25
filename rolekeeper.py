@@ -49,6 +49,8 @@ def shelf_invalidate(shelf):
         for key, entry in shelf.cache.items():
             shelf[key] = entry
         shelf.writeback = True
+    if hasattr(shelf.dict, 'reorganize'):
+        shelf.dict.reorganize()
     if hasattr(shelf.dict, 'sync'):
         shelf.dict.sync()
 
@@ -125,6 +127,8 @@ class RoleKeeper:
         if self.db:
             for server, db in self.db.items():
                 print ('Closing DB "{}"'.format(server.name))
+                if db and hasattr(db.dict, 'reorganize'):
+                    db.dict.reorganize()
                 db.close()
             self.db = None
 
@@ -1402,6 +1406,7 @@ class RoleKeeper:
 
         # If we found a channel with the given name
         if not channel or error or not match:
+            print(channel, error, match)
             await self.reply(message, 'This match does not exist!')
             return False
 
@@ -2460,8 +2465,8 @@ class RoleKeeper:
                     old_captain.group = new_captain.group
                     update_group_list.append(old_captain)
                     print ('Changed group from {A} to {B} for "{cpt}"'\
-                           .format(A=old_group.id,
-                                   B=old_captain.group.id,
+                           .format(A=old_group.id if old_group else None,
+                                   B=old_captain.group.id if old_captain.group else None,
                                    cpt=old_captain.nickname))
 
                     # If the captain is already in the server

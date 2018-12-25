@@ -513,13 +513,6 @@ class EsportsDriver:
         teamA_url = urllib.parse.urljoin(match_url, teamA_im['src']) if teamA_im else ''
         teamB_url = urllib.parse.urljoin(match_url, teamB_im['src']) if teamB_im else ''
 
-        print('dl', teams_dl)
-        print('d', teamA_d)
-        print('n', teamA_n)
-        print('id', teamA_id)
-        print('im', teamA_im)
-        print('url', teamA_url)
-
         if teamA_n == team1_name:
             team1_icon = teamA_url
             team2_icon = teamB_url

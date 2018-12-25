@@ -3,7 +3,7 @@
 import os
 
 from PIL import Image, ImageFont, ImageDraw
-import urllib
+import urllib.request
 import io
 
 from locale_s import tr
@@ -38,26 +38,26 @@ class Carousel:
         self.banner_img = Image.open('img/banner.png').resize(size, Image.ANTIALIAS)
         self.footer_img = Image.open('img/footer.png')
         self.fnt1 = ImageFont.truetype('Quantico-Regular.ttf', 50)
-        self.fnt2 = ImageFont.truetype('Quantico-Regular.ttf', 30)
+        self.fnt2 = ImageFont.truetype('WarFace_Regular.ttf', 30)
 
         self.w, self.h = self.get_image(self.match.maps[0]).size
         self.mode = self.get_image(self.match.maps[0]).mode
 
         self.fade_img = Image.new(self.mode, (self.w, self.h))
         d2 = ImageDraw.Draw(self.fade_img)
-        d2.rectangle([0, 0, self.w, self.h], fill=(0, 0, 0, 128))
+        d2.rectangle([0, 0, self.w, self.h], fill=(0, 0, 0, 180))
 
         self.teamA_img = None
         if self.match.teamA_icon:
             file = io.BytesIO(urllib.request.urlopen(self.match.teamA_icon).read())
-            self.teamA_img = Image.open(file).copy()
+            self.teamA_img = Image.open(file).copy().convert('RGBA')
             self.teamA_img.thumbnail((54, 54), Image.ANTIALIAS)
             file.close()
 
         self.teamB_img = None
         if self.match.teamB_icon:
             file = io.BytesIO(urllib.request.urlopen(self.match.teamB_icon).read())
-            self.teamB_img = Image.open(file).copy()
+            self.teamB_img = Image.open(file).copy().convert('RGBA')
             self.teamB_img.thumbnail((54, 54), Image.ANTIALIAS)
             file.close()
 

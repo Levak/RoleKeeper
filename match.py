@@ -416,8 +416,11 @@ class Match:
         self.streamed = True
         self.carousel = Carousel(self, bot)
 
-        if not streamed_before:
+        if not streamed_before and self.turn_handle:
             await self.status(self.turn_handle.clone())
+        elif self.carousel:
+            self.carousel.update_status()
+            self.carousel.save_status()
 
     async def unstream(self):
         self.streamed = False
