@@ -386,6 +386,51 @@ class RoleKeeper:
 
         await self.handle_member_join(member)
 
+    async def on_member_update(self, before, after):
+        server = after.server if after.server else before.server
+
+        if server.name not in self.config['servers']:
+            return
+
+        before_discord_id = str(before)
+        after_discord_id = str(after)
+
+        # If it's not a discord ID change, ignore
+        if before_discord_id == after_discord_id:
+            return
+
+        _, _, captain = self.find_cup_db(server, captain=before.id)
+
+        # A known captain changed ID
+        if captain:
+            print('"{}" changed discord ID to "{}"'\
+                  .format(before_discord_id,
+                          after_discord_id))
+            captain.discord = after_discord_id
+        else:
+            # Try to find the captain discord ID in the DB
+            _, error, _ = self.find_cup_db(after.server, discord=after_discord_id)
+            if not error:
+                # If found, update him
+                await self.handle_member_join(after)
+
+    def get_nick_name(self, db, captain):
+        nickname = captain.nickname
+        if not db['with_roles']:
+            try:
+                nickname = self.config['nickname']\
+                               .format(nick=captain.nickname,
+                                       team=captain.team_name)
+            except:
+                pass
+
+        # Maximum of 32 characters for the nickname
+        space_left = 32 - len(nickname)
+        if space_left < 0:
+            nickname = '{}...'.format(nickname[:space_left - 3])
+
+        return nickname
+
     def get_role_name(self, role_id, arg=None, arg2=None):
         if role_id not in self.config['roles']:
             print ('WARNING: Missing configuration for role "{}"'.format(role_id))
@@ -605,6 +650,57 @@ class RoleKeeper:
 
         return True
 
+    async def update_team(self, message, server, team_name, new_name, cup_name):
+        db, error = self.get_cup_db(server, cup_name)
+        if error:
+            await self.reply(message, error)
+            return False
+
+        team = None
+        trole_name = None
+        for tn, t in db['teams'].items():
+            if t.name == team_name:
+                team = t
+                trole_name = tn
+                break
+
+        if not team:
+            await self.reply(message, 'Team "{}" not found'.format(team_name))
+            return False
+
+        team.name = new_name
+        new_role_name = self.get_role_name('team', arg=new_name)
+
+        del db['teams'][trole_name]
+        db['teams'][new_role_name] = team
+
+        print('Renamed team "{}" to "{}"'.format(team_name, new_name))
+
+        for captain in db['captains'].values():
+            if captain.team_name == team_name:
+                captain.team_name = new_name
+
+        if team.role:
+            try:
+                await self.client.edit_role(server, team.role, name=new_role_name)
+            except:
+                print('WARNING: Failed to rename role to "{}"'.format(new_role_name))
+                pass
+        else:
+            for captain in team.captains.values():
+                new_nickname = self.get_nick_name(db, captain)
+
+                try:
+                    await self.client.change_nickname(captain.member, new_nickname)
+                    print ('Renamed "{id}" to "{nick}"'\
+                           .format(id=str(captain.member), nick=new_nickname))
+                except:
+                    print ('WARNING: Failed to rename "{id}" to "{nick}"'\
+                           .format(id=str(captain.member), nick=new_nickname))
+                    pass
+
+        return True
+
     async def check_captain(self, message, server, member, cup_name):
         db, error = self.get_cup_db(server, cup_name)
         if error:
@@ -819,20 +915,7 @@ class RoleKeeper:
                   .format(roles=role_names))
 
         # Change nickname of team captain
-        if db['with_roles']:
-            nickname = captain.nickname
-        else:
-            try:
-                nickname = self.config['nickname']\
-                               .format(nick=captain.nickname,
-                                       team=captain.team_name)
-            except:
-                nickname = captain.nickname
-
-        # Maximum of 32 characters for the nickname
-        space_left = 32 - len(nickname)
-        if space_left < 0:
-            nickname = '{}...'.format(nickname[:space_left - 3])
+        nickname = self.get_nick_name(db, captain)
 
         try:
             await self.client.change_nickname(member, nickname)
@@ -1843,15 +1926,16 @@ class RoleKeeper:
             return False
 
         csv = io.BytesIO()
-        csv.write('#discord;nickname;team_name;group\n'.encode())
+        csv.write('#discord;nickname;team_name;group;did\n'.encode())
 
         for captain in db['captains'].values():
             discord_id = str(captain.member) if captain.member else captain.discord
-            csv.write('{discord};{nick};{team};{group}\n'\
+            csv.write('{discord};{nick};{team};{group};{did}\n'\
                       .format(discord=discord_id,
                               nick=captain.nickname,
                               team=captain.team.name if captain.team else '',
-                              group=captain.group.id if captain.group else '').encode())
+                              group=captain.group.id if captain.group else '',
+                              did=captain.member.id if captain.member else '').encode())
 
         csv.seek(0)
 
@@ -2035,7 +2119,7 @@ class RoleKeeper:
                                                 t=md_inline_code(captain.team_name),
                                                 d=md_inline_code(captain.discord),
                                                 g=group_s))
-            elif not discord.utils.find(lambda m: str(m) == captain.discord, members):
+            elif not discord.utils.find(lambda m: captain.member and str(m) == str(captain.member) or str(m) == captain.discord, members):
                 missing_members.append('{n} (Team {t}{g}): {d}'\
                                        .format(n=md_inline_code(captain.nickname),
                                                t=md_inline_code(captain.team_name),
@@ -2052,7 +2136,7 @@ class RoleKeeper:
             report = '{}\n\n:no_entry_sign: **Invalid Discord IDs**\n• {}'.format(report, '\n• '.join(invalid_discords))
 
         total = len(captains)
-        if not can_create_roles:
+        if len(report) > 2000:
             csv = io.BytesIO()
             csv.write(report.encode())
             csv.seek(0)

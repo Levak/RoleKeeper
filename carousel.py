@@ -37,7 +37,7 @@ class Carousel:
         self.ban_img = Image.open('img/ban.png').resize(size, Image.ANTIALIAS)
         self.banner_img = Image.open('img/banner.png').resize(size, Image.ANTIALIAS)
         self.footer_img = Image.open('img/footer.png')
-        self.fnt1 = ImageFont.truetype('Quantico-Regular.ttf', 50)
+        self.fnt1 = ImageFont.truetype('WarFace_Regular.ttf', 50)
         self.fnt2 = ImageFont.truetype('WarFace_Regular.ttf', 30)
 
         self.w, self.h = self.get_image(self.match.maps[0]).size

@@ -133,6 +133,7 @@ access to the `config.json` file and bot launch.
  - `!check_captain @captain`, to check if a captain is recognized as a captain
    by the bot;
  - `!update_cup cup // CSV`, to bulk update groups/discords;
+ - `!update_team oldname newname`, to change a team's name;
  - `!stop_hunt cup`, to stop from seeing the channel as a captain hunt;
  - `!broadcast on/off`, to enable broadcast notifications globally;
  - `!reconfig`, to reload the configuration file without restarting the bot;

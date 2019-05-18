@@ -111,6 +111,10 @@ async def on_member_join(member):
     await rk.on_member_join(member)
 
 @client.event
+async def on_member_update(before, after):
+    await rk.on_member_update(before, after)
+
+@client.event
 async def on_message(message):
     # If we are the one sending a message, skip
     if message.author == rk.client.user:
@@ -336,6 +340,17 @@ async def on_message(message):
             else:
                 await rk.reply(message,
                                'Too much or not enough arguments:\n```!update_captain @xxx nickname [cup]```')
+
+        elif command == '!update_team' and is_ref:
+            if len(parts) >= 2:
+                ret = await rk.update_team(message,
+                                           message.author.server,
+                                           parts[0],
+                                           parts[1],
+                                           parts[2] if len(parts) > 2 else '')
+            else:
+                await rk.reply(message,
+                               'Too much or not enough arguments:\n```!update_team team_name new_name [cup]```')
 
         elif command == '!remove_captain' and is_ref:
             if len(message.mentions) == 1:
