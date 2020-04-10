@@ -50,6 +50,9 @@ def http_create_channel(self, guild_id, name, channel_type, parent_id=None, perm
     if parent_id is not None:
         payload['parent_id'] = parent_id
 
+    if payload['type'] == 'text':
+        payload['type'] = 0
+
     return self.request(discord.http.Route('POST', '/guilds/{guild_id}/channels', guild_id=guild_id), json=payload)
 
 client.http.create_channel = types.MethodType(http_create_channel, client.http)

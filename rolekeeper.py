@@ -126,7 +126,10 @@ class RoleKeeper:
 
         if self.db:
             for server, db in self.db.items():
-                print ('Closing DB "{}"'.format(server.name))
+                try:
+                    print ('Closing DB "{}"'.format(server.name))
+                except BrokenPipeError:
+                    pass
                 if db and hasattr(db.dict, 'reorganize'):
                     db.dict.reorganize()
                 db.close()
@@ -257,7 +260,7 @@ class RoleKeeper:
 
     async def open_db(self, server):
         if server in self.db and self.db[server]:
-            self.db[server].close()
+            return
 
         self.db[server] = open_db(self.config['servers'][server.name]['db'])
 
