@@ -19,7 +19,9 @@ def open_db(name):
         db = shelve.open(path, writeback=True)
 
     except:
-        print ('ERROR Cannot open database "{}"'.format(folder))
+        import traceback
+        traceback.print_exc()
+        print ('ERROR Cannot open database "{}"'.format(path))
         db = None
         pass
 

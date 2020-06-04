@@ -59,6 +59,7 @@ class RoleKeeper:
         self.client = client
         self.config_file = config_file
         self.db = {}
+        self.cache = {}
         self.emotes = {}
 
         self.checked_cups = {}
@@ -117,6 +118,8 @@ class RoleKeeper:
     def sync_db(self):
         if self.db:
             for server, db in self.db.items():
+                if 'sroles' in db:
+                    del db['sroles']
                 print ('Automatically save DB "{}"'.format(server.name))
                 shelf_invalidate(db)
 
@@ -130,8 +133,7 @@ class RoleKeeper:
                     print ('Closing DB "{}"'.format(server.name))
                 except BrokenPipeError:
                     pass
-                if db and hasattr(db.dict, 'reorganize'):
-                    db.dict.reorganize()
+                shelf_invalidate(db)
                 db.close()
             self.db = None
 
@@ -268,15 +270,29 @@ class RoleKeeper:
             self.db[server]['cups'] = {}
 
         for cup_name, cup_db in self.db[server]['cups'].items():
+            if 'cup' in cup_db:
+                await cup_db['cup'].resume(server, self, cup_db)
+
             if 'driver' in cup_db:
                 await cup_db['driver'].resume(server, self, cup_db)
 
+            if 'teams' in cup_db:
+                for _, team in cup_db['teams'].items():
+                    await team.resume(server, self, cup_db)
+
+            if 'groups' in cup_db:
+                for _, group in cup_db['groups'].items():
+                    await group.resume(server, self, cup_db)
+
+            if 'captains' in cup_db:
+                for _, captain in cup_db['captains'].items():
+                    await captain.resume(server, self, cup_db)
+
             if 'matches' in cup_db:
-                for channel, match in cup_db['matches'].items():
+                for _, match in cup_db['matches'].items():
                     await match.resume(server, self, cup_db)
 
         # Refill group cache
-        self.db[server]['sroles'] = {}
         self.cache_special_role(server, 'referee')
         self.cache_special_role(server, 'coreferee')
         self.cache_special_role(server, 'streamer')
@@ -291,17 +307,17 @@ class RoleKeeper:
         if 'with_roles' not in db:
             db['with_roles'] = True
 
-        if 'matches' not in db:
-            db['matches'] = {}
-
         if 'teams' not in db:
             db['teams'] = {}
+
+        if 'groups' not in db:
+            db['groups'] = {}
 
         if 'captains' not in db:
             db['captains'] = {}
 
-        if 'groups' not in db:
-            db['groups'] = {}
+        if 'matches' not in db:
+            db['matches'] = {}
 
         return db
 
@@ -490,15 +506,25 @@ class RoleKeeper:
         if not role_name:
             return None
 
+        # Trick to make sure the structures are there
+        self.get_special_role(server, role_id)
+
         role = discord.utils.get(server.roles, name=role_name)
 
-        self.db[server]['sroles'][role_id] = role
-        if not self.db[server]['sroles'][role_id]:
+        self.cache[server]['sroles'][role_id] = role
+        if not self.cache[server]['sroles'][role_id]:
             print ('WARNING: Missing role "{}" in {}'.format(role_name, server.name))
 
     def get_special_role(self, server, role_id):
-        if role_id in self.db[server]['sroles']:
-            return self.db[server]['sroles'][role_id]
+        if not self.cache:
+            self.cache = {}
+        if server not in self.cache:
+            self.cache[server] = {}
+        if 'sroles' not in self.cache[server]:
+            self.cache[server]['sroles'] = {}
+
+        if role_id in self.cache[server]['sroles']:
+            return self.cache[server]['sroles'][role_id]
         return None
 
     async def add_group(self, message, server, group_id, cup_name):
@@ -900,34 +926,35 @@ class RoleKeeper:
         captain.discord = discord_id
 
         # Assign user roles
-        if team and team.role:
+        if team and team.role and team.role not in member.roles:
             role_list.append(team.role)
-        if captain.group and captain.group.role:
+        if captain.group and captain.group.role and captain.group.role not in member.roles:
             role_list.append(captain.group.role)
-        if captain.cup and captain.cup.role:
+        if captain.cup and captain.cup.role and captain.cup.role not in member.roles:
             role_list.append(captain.cup.role)
 
         role_names = [ r.name for r in role_list ]
-
-        try:
-            await self.client.add_roles(member, *role_list)
-            print('Assigned roles <{role}> to "{id}"'\
-                  .format(role=role_names, id=discord_id))
-        except:
-            print('ERROR: Missing one role out of {roles}'\
-                  .format(roles=role_names))
+        if len(role_list) > 0:
+            try:
+                await self.client.add_roles(member, *role_list)
+                print('Assigned roles <{role}> to "{id}"'\
+                      .format(role=role_names, id=discord_id))
+            except:
+                print('ERROR: Missing one role out of {roles}'\
+                      .format(roles=role_names))
 
         # Change nickname of team captain
         nickname = self.get_nick_name(db, captain)
 
-        try:
-            await self.client.change_nickname(member, nickname)
-            print ('Renamed "{id}" to "{nick}"'\
-                   .format(id=discord_id, nick=nickname))
-        except:
-            print ('WARNING: Failed to rename "{id}" to "{nick}"'\
-                   .format(id=discord_id, nick=nickname))
-            pass
+        if nickname != member.nick:
+            try:
+                await self.client.change_nickname(member, nickname)
+                print ('Renamed "{id}" to "{nick}"'\
+                       .format(id=discord_id, nick=nickname))
+            except:
+                print ('WARNING: Failed to rename "{id}" to "{nick}"'\
+                       .format(id=discord_id, nick=nickname))
+                pass
 
         # Add captain from existing match rooms
         for channel_name, match in db['matches'].items():
@@ -1227,9 +1254,10 @@ class RoleKeeper:
 
                 print('Created channel "<{channel}>"'\
                       .format(channel=channel_name))
-            except:
+            except Exception as e:
                 print('WARNING: Failed to create channel "<{channel}>"'\
                       .format(channel=channel_name))
+                raise e
 
             try:
                 await self.client.edit_channel(
@@ -1640,35 +1668,35 @@ class RoleKeeper:
             # 3. Remove group role from member
             role_list = []
 
-            if captain.group and captain.group.role:
+            if captain.group and captain.group.role and captain.group.role in member.roles:
                 role_list.append(captain.group.role)
-            if captain.cup and captain.cup.role:
+            if captain.cup and captain.cup.role and captain.cup.role in member.roles:
                 role_list.append(captain.cup.role)
 
             role_names = [ r.name for r in role_list ]
 
             # 4. Remove team captain and group roles from member
-            try:
-                await self.client.remove_roles(member, *role_list)
-
-                print ('Removed roles <{roles}> from "{member}"'\
-                       .format(member=discord_id,
-                               roles=role_names))
-            except:
-                print ('WARNING: Failed to remove roles <{roles}> from "{member}"'\
-                       .format(member=discord_id,
-                               roles=roles_names))
-                pass
+            if len(role_names) > 0:
+                try:
+                    await self.client.remove_roles(member, *role_list)
+                    print ('Removed roles <{roles}> from "{member}"'\
+                           .format(member=discord_id,
+                                   roles=role_names))
+                except:
+                    print ('WARNING: Failed to remove roles <{roles}> from "{member}"'\
+                           .format(member=discord_id,
+                                   roles=role_names))
+                    pass
 
             # 5. Reset member nickname
-            try:
-                await self.client.change_nickname(member, None)
-                print ('Reset nickname for "{member}"'\
-                       .format(member=discord_id))
-            except:
-                print ('WARNING: Failed to reset nickname for "{member}"'\
-                       .format(member=discord_id))
-                pass
+            if member.nick:
+                try:
+                    await self.client.change_nickname(member, None)
+                    print ('Reset nickname for "{member}"'\
+                           .format(member=discord_id))
+                except:
+                    print ('WARNING: Failed to reset nickname for "{member}"'\
+                           .format(member=discord_id))
 
         db['captains'].clear()
 
@@ -1816,14 +1844,15 @@ class RoleKeeper:
         server = message.server
 
         csv = io.BytesIO()
-        csv.write('#discord_id;roles\n'.encode())
+        csv.write('#discord_id;roles;nickname\n'.encode())
 
         members = list(server.members)
         for member in members:
             discord_id = str(member)
-            csv.write('"{discord}";"{roles}"\n'\
+            csv.write('"{discord}";"{roles}";"{nickname}"\n'\
                       .format(discord=discord_id,
-                              roles=','.join([ r.name for r in member.roles ]))\
+                              roles=','.join([ r.name for r in member.roles ]),
+                              nickname=member.nick)\
                       .encode())
 
         csv.seek(0)
