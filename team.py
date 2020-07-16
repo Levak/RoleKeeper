@@ -125,7 +125,11 @@ class TeamCaptain:
             'group': self.group,
             'cup': self.cup,
             'team': self.team,
-            '_member_id': self.member.id if hasattr(self, 'member') and self.member else self._member_id
+            '_member_id': self.member.id \
+                            if hasattr(self, 'member') and self.member \
+                            else self._member_id \
+                              if hasattr(self, '_member_id') \
+                              else None
         }
 
         return state

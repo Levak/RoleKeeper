@@ -93,6 +93,25 @@ def create_channel(self, server, name, *overwrites, category=None, type=None):
 
 client.create_channel = types.MethodType(create_channel, client)
 
+from discord import channel
+class _Overwrites:
+    __slots__ = ('id', 'allow', 'deny', 'type')
+
+    def __init__(self, **kwargs):
+        self.id = kwargs.pop('id')
+        self.allow = kwargs.pop('allow', 0)
+        self.deny = kwargs.pop('deny', 0)
+        self.type = kwargs.pop('type')
+
+    def _asdict(self):
+        return {
+            'id': self.id,
+            'allow': self.allow,
+            'deny': self.deny,
+            'type': self.type,
+        }
+channel.Overwrites = _Overwrites
+
 ############################################################################
 #                                End of hack                               #
 ############################################################################
