@@ -36,12 +36,15 @@ class Handle:
 
         self.team = None
 
-        if self.member:
+        if self.member and self.member.id != bot.client.user.id:
             try:
-                db, error, _ = bot.find_cup_db(self.member.server, captain=self.member.id)
+                db, error, _ = bot.find_cup_db(self.member.guild, captain=self.member.id)
                 if not error:
                     self.team = db['captains'][self.member.id].team
+                else:
+                    print('WARNING: {} (member: {})'.format(error, self.member.id))
             except KeyError:
+                print('WARNING: Could not find team for {}'.format(self.member.id))
                 pass
 
     ## Override pickle serialization
@@ -76,15 +79,16 @@ class Handle:
         return state
 
     ## Once the bot is ready, restore the message
-    async def resume(self, server, bot):
-        channel = discord.utils.get(server.channels, id=self._msg_ch) \
+    async def resume(self, guild, bot):
+        channel = guild.get_channel(self._msg_ch) \
                   if self._msg_ch else None
         try:
-            message = await bot.client.get_message(channel, self._msg_id) \
+            message = await channel.fetch_message(self._msg_id) \
                       if channel and self._msg_id else None
         except:
+            print('WARNING: Could not find message id {}'.format(self._msg_id))
             message = None
-        member = discord.utils.get(server.members, id=self._msg_am) \
+        member = guild.get_member(self._msg_am) \
                  if self._msg_am else None
 
         if message:
@@ -112,7 +116,7 @@ class Handle:
             return None
 
         try:
-            return await self.bot.client.add_reaction(self.message, reaction)
+            return await self.message.add_reaction(reaction)
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))
             err_count += 1
@@ -123,7 +127,7 @@ class Handle:
 
     async def send(self, msg, err_count=0):
         try:
-            return await self.bot.client.send_message(self.channel, msg)
+            return await self.channel.send(content=msg)
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))
             err_count += 1
@@ -134,7 +138,7 @@ class Handle:
 
     async def send_file(self, file, name, msg, err_count=0):
         try:
-            return await self.bot.client.send_file(self.channel, file, filename=name, content=msg)
+            return await self.channel.send(file=discord.File(fp=file, filename=name), content=msg)
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))
             err_count += 1
@@ -145,7 +149,7 @@ class Handle:
 
     async def edit(self, msg, err_count=0):
         try:
-            return await self.bot.client.edit_message(self.message, msg)
+            return await self.message.edit(content=msg)
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))
             err_count += 1
@@ -164,7 +168,7 @@ class Handle:
             for field in fields:
                 embed.add_field(name=field['name'], value=field['value'], inline=False)
 
-            return await self.bot.client.send_message(self.channel, embed=embed)
+            return await self.channel.send(embed=embed)
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))
             err_count += 1
@@ -183,7 +187,7 @@ class Handle:
             for field in fields:
                 embed.add_field(name=field['name'], value=field['value'], inline=False)
 
-            return await self.bot.client.edit_message(self.message, embed=embed)
+            return await self.message.edit(embed=embed)
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))
             err_count += 1
@@ -194,7 +198,7 @@ class Handle:
 
     async def delete(self, err_count=0):
         try:
-            return await self.bot.client.delete_message(self.message)
+            return await self.message.delete()
         except discord.errors.HTTPException as e:
             print('WARNING: HTTPexception: {}'.format(str(e)))
             err_count += 1
@@ -204,21 +208,21 @@ class Handle:
             return await self.delete(err_count=err_count)
 
     async def broadcast(self, bcast_id, msg):
-        if not self.bot.is_broadcast_enabled(self.channel.server):
+        if not self.bot.is_broadcast_enabled(self.channel.guild):
             return
 
         channels = []
         try:
-            channels = self.bot.config['servers'][self.channel.server.name]['rooms'][bcast_id]
+            channels = self.bot.config['guilds'][self.channel.guild.name]['rooms'][bcast_id]
         except:
             print('WARNING: No broadcast configuration for "{}"'.format(bcast_id))
             pass
 
         for channel_name in channels:
-            channel = discord.utils.get(self.channel.server.channels, name=channel_name)
+            channel = discord.utils.get(self.channel.guild.channels, name=channel_name)
             if channel:
                 try:
-                    await self.bot.client.send_message(channel, msg)
+                    await channel.send(content=msg)
                 except:
                     print('WARNING: No permission to write in "{}"'.format(channel_name))
                     pass

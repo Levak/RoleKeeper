@@ -80,7 +80,7 @@ class MatchFFA:
         return False
 
 class Match:
-    def __init__(self, teamA, teamB, maps, emotes=None):
+    def __init__(self, teamA, teamB, maps, bot=None):
         self.teams = [ teamA, teamB ]
         self.teamA = teamA
         self.teamB = teamB
@@ -90,7 +90,7 @@ class Match:
         self.picked_maps = []
         self.picked_sides = []
         self.turn = 0
-        self.emotes = emotes
+        self.bot = bot
 
         self.mode = 'BO1'
         self.mode_title = tr('bo1_title')
@@ -127,18 +127,27 @@ class Match:
 
         # We cannot serialize this object, thus, remove it
         state['carousel'] = None
+        state['bot'] = None
 
         return state
 
-    async def resume(self, server, bot, db):
+    async def resume(self, guild, bot, db):
         if hasattr(self, 'status_handle') and self.status_handle:
-            await self.status_handle.resume(server, bot)
+            await self.status_handle.resume(guild, bot)
 
         if hasattr(self, 'turn_handle') and self.turn_handle:
-            await self.turn_handle.resume(server, bot)
+            await self.turn_handle.resume(guild, bot)
 
         if hasattr(self, 'streamed') and self.streamed:
             self.carousel = Carousel(self, bot)
+
+        if hasattr(self, 'teamA') and self.teamA and not hasattr(self.teamA, 'role'):
+            await self.teamA.resume(guild, bot, db)
+
+        if hasattr(self, 'teamB') and self.teamB and not hasattr(self.teamA, 'role'):
+            await self.teamB.resume(guild, bot, db)
+
+        self.bot = bot
 
     def is_in_match(self, member):
         if self.teamA.role and self.teamB.role: # TODO fix when team got replaced live
@@ -149,10 +158,10 @@ class Match:
                 or member.id in self.teamB.captains
 
     def to_side(self, side_id):
-        if self.emotes \
-           and side_id in self.emotes \
-           and len(self.emotes[side_id]) > 0:
-            return self.emotes[side_id]
+        if self.bot and self.bot.emotes \
+           and side_id in self.bot.emotes \
+           and len(self.bot.emotes[side_id]) > 0:
+            return self.bot.emotes[side_id]
         else:
             return md_bold(side_id)
 
@@ -391,14 +400,15 @@ class Match:
                 self.turn_handle.message = await handle.send(turn)
 
     async def send_carousel(self, handle, text):
-        handle = self.status_handle if not handle else handle
         message = None
 
-        if self.carousel and handle:
+        if self.carousel:
             self.carousel.update_status()
             self.carousel.save_status()
 
-            if False: # TODO later add config
+            if handle and self.bot and self.bot.is_carousel_enabled():
+                handle = self.status_handle if not handle else handle
+
                 buffer = io.BytesIO()
                 status = self.carousel.get_status()
                 status.save(buffer, "PNG")
@@ -463,8 +473,8 @@ class Match:
             return ''
 
 class MatchBo2(Match):
-    def __init__(self, teamA, teamB, maps, emotes=None):
-        Match.__init__(self, teamA, teamB, maps, emotes=emotes)
+    def __init__(self, teamA, teamB, maps, bot=None):
+        Match.__init__(self, teamA, teamB, maps, bot=bot)
 
         assert len(self.maps) >= 2, 'Not enough maps'
 
@@ -523,8 +533,8 @@ class MatchBo2(Match):
                                   match_id=md_inline_code(handle.channel.name)))
 
 class MatchBo3(Match):
-    def __init__(self, teamA, teamB, maps, emotes=None):
-        Match.__init__(self, teamA, teamB, maps, emotes=emotes)
+    def __init__(self, teamA, teamB, maps, bot=None):
+        Match.__init__(self, teamA, teamB, maps, bot=bot)
 
         assert len(self.maps) >= 5, 'Not enough maps'
 
@@ -590,8 +600,8 @@ class MatchBo3(Match):
                                   match_id=md_inline_code(handle.channel.name)))
 
 class MatchBo5(Match):
-    def __init__(self, teamA, teamB, maps, emotes=None):
-        Match.__init__(self, teamA, teamB, maps, emotes=emotes)
+    def __init__(self, teamA, teamB, maps, bot=None):
+        Match.__init__(self, teamA, teamB, maps, bot=bot)
 
         assert len(self.maps) >= 5, 'Not enough maps'
 

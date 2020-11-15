@@ -35,7 +35,7 @@ import bs4 as BeautifulSoup
 class EsportsDriver:
     def __init__(self, bot, db, url, cup_name, cat_id):
         self.bot = bot
-        self.server = None
+        self.guild = None
         self.db = db
         self.url = url
         self.cup_name = cup_name
@@ -83,18 +83,18 @@ class EsportsDriver:
 
         return state
 
-    async def resume(self, server, bot, db):
+    async def resume(self, guild, bot, db):
         started = self.started
 
         handle = None
         if hasattr(self, 'handle') and self.handle:
             handle = self.handle
-            await self.handle.resume(server, bot)
+            await self.handle.resume(guild, bot)
 
         status_handle = None
         if hasattr(self, 'status_handle') and self.status_handle:
             status_handle = self.status_handle
-            await self.status_handle.resume(server, bot)
+            await self.status_handle.resume(guild, bot)
 
         # Recreate the object
         self.__init__(bot, db, self.url, self.cup_name, self.cat_id)
@@ -102,17 +102,17 @@ class EsportsDriver:
 
         # If the driver was running, start it again
         if started:
-            self.start(server, handle)
+            self.start(guild, handle)
 
-    def start(self, server, handle):
-        print('{}: Start sync'.format(server.name if server else ''))
+    def start(self, guild, handle):
+        print('{}: Start sync'.format(guild.name if guild else ''))
         self.handle = handle
-        self.server = server
+        self.guild = guild
         self.start_event.set()
         self.started = True
 
     async def stop(self):
-        print('{}: Stop sync'.format(self.server.name if self.server else ''))
+        print('{}: Stop sync'.format(self.guild.name if self.guild else ''))
         self.alive = False
 
         await self.update_status(force=True)
@@ -191,7 +191,7 @@ class EsportsDriver:
 
         if not match_status.channel:
             channel_name = self.get_channel(match_status.id)
-            match_status.channel = discord.utils.get(self.server.channels,
+            match_status.channel = discord.utils.get(self.guild.channels,
                                                      name=channel_name) if channel_name else None
 
         if waiting:
@@ -401,7 +401,7 @@ class EsportsDriver:
                 match_id = match.attrs['data-match_id']
                 match_url = urllib.parse.urljoin(base_url, 'match/{}'.format(match_id))
 
-                server = self.server
+                guild = self.guild
                 rk_match = self.get_match(match_id, team1_name, team2_name)
 
                 if 'winner' in team1_d.attrs['class'] \
@@ -607,7 +607,7 @@ class EsportsDriver:
         try:
             res, channel_name = \
                 await self.bot.matchup(self.handle.message, \
-                                       self.handle.message.server, \
+                                       self.handle.message.guild, \
                                        captainA.team, captainB.team, \
                                        cat_id, self.db['cup'].name, \
                                        mode=mode,

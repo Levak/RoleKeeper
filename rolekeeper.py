@@ -51,8 +51,10 @@ def shelf_invalidate(shelf):
         shelf.writeback = True
     if hasattr(shelf.dict, 'reorganize'):
         shelf.dict.reorganize()
+        print('reorganized')
     if hasattr(shelf.dict, 'sync'):
         shelf.dict.sync()
+        print('synced')
 
 class RoleKeeper:
     def __init__(self, client, config_file):
@@ -65,6 +67,9 @@ class RoleKeeper:
         self.checked_cups = {}
 
         self.config = self.get_config(self.config_file)
+
+        if not self.config:
+            return
 
         for name in [ 'loading' ]:
             if 'emotes' in self.config and name in self.config['emotes']:
@@ -117,10 +122,10 @@ class RoleKeeper:
 
     def sync_db(self):
         if self.db:
-            for server, db in self.db.items():
+            for guild, db in self.db.items():
                 if 'sroles' in db:
                     del db['sroles']
-                print ('Automatically save DB "{}"'.format(server.name))
+                print ('Automatically save DB "{}"'.format(guild.name))
                 shelf_invalidate(db)
 
     def atexit(self):
@@ -128,17 +133,17 @@ class RoleKeeper:
             self.sync_db_task.cancel()
 
         if self.db:
-            for server, db in self.db.items():
+            for guild, db in self.db.items():
                 try:
-                    print ('Closing DB "{}"'.format(server.name))
+                    print ('Closing DB "{}"'.format(guild.name))
                 except BrokenPipeError:
                     pass
                 shelf_invalidate(db)
                 db.close()
             self.db = None
 
-    def check_server(self, server):
-        if server.name not in self.config['servers']:
+    def check_guild(self, guild):
+        if guild.name not in self.config['guilds']:
             return False
         return True
 
@@ -242,12 +247,11 @@ class RoleKeeper:
 
         return captains, groups
 
-    async def get_or_create_role(self, server, role_name, color=None):
-        role = discord.utils.get(server.roles, name=role_name)
+    async def get_or_create_role(self, guild, role_name, color=None):
+        role = discord.utils.get(guild.roles, name=role_name)
 
         if not role:
-            role = await self.client.create_role(
-                server,
+            role = await guild.create_role(
                 name=role_name,
                 permissions=discord.Permissions.none(),
                 mentionable=True,
@@ -260,49 +264,49 @@ class RoleKeeper:
 
         return role
 
-    async def open_db(self, server):
-        if server in self.db and self.db[server]:
+    async def open_db(self, guild):
+        if guild in self.db and self.db[guild]:
             return
 
-        self.db[server] = open_db(self.config['servers'][server.name]['db'])
+        self.db[guild] = open_db(self.config['guilds'][guild.name]['db'])
 
-        if 'cups' not in self.db[server]:
-            self.db[server]['cups'] = {}
+        if 'cups' not in self.db[guild]:
+            self.db[guild]['cups'] = {}
 
-        for cup_name, cup_db in self.db[server]['cups'].items():
+        for cup_name, cup_db in self.db[guild]['cups'].items():
             if 'cup' in cup_db:
-                await cup_db['cup'].resume(server, self, cup_db)
+                await cup_db['cup'].resume(guild, self, cup_db)
 
             if 'driver' in cup_db:
-                await cup_db['driver'].resume(server, self, cup_db)
+                await cup_db['driver'].resume(guild, self, cup_db)
 
             if 'teams' in cup_db:
                 for _, team in cup_db['teams'].items():
-                    await team.resume(server, self, cup_db)
+                    await team.resume(guild, self, cup_db)
 
             if 'groups' in cup_db:
                 for _, group in cup_db['groups'].items():
-                    await group.resume(server, self, cup_db)
+                    await group.resume(guild, self, cup_db)
 
             if 'captains' in cup_db:
                 for _, captain in cup_db['captains'].items():
-                    await captain.resume(server, self, cup_db)
+                    await captain.resume(guild, self, cup_db)
 
             if 'matches' in cup_db:
                 for _, match in cup_db['matches'].items():
-                    await match.resume(server, self, cup_db)
+                    await match.resume(guild, self, cup_db)
 
         # Refill group cache
-        self.cache_special_role(server, 'referee')
-        self.cache_special_role(server, 'coreferee')
-        self.cache_special_role(server, 'streamer')
+        self.cache_special_role(guild, 'referee')
+        self.cache_special_role(guild, 'coreferee')
+        self.cache_special_role(guild, 'streamer')
 
-    def open_cup_db(self, server, cup):
+    def open_cup_db(self, guild, cup):
         cup.name = cup.name.upper()
-        if cup.name not in self.db[server]['cups']:
-            self.db[server]['cups'][cup.name] = { 'cup': cup }
+        if cup.name not in self.db[guild]['cups']:
+            self.db[guild]['cups'][cup.name] = { 'cup': cup }
 
-        db = self.db[server]['cups'][cup.name]
+        db = self.db[guild]['cups'][cup.name]
 
         if 'with_roles' not in db:
             db['with_roles'] = True
@@ -321,23 +325,27 @@ class RoleKeeper:
 
         return db
 
-    def close_cup_db(self, server, cup_name):
+    def close_cup_db(self, guild, cup_name):
         cup_name = cup_name.upper()
-        if cup_name not in self.db[server]['cups']:
+        if cup_name not in self.db[guild]['cups']:
             return False
 
-        del self.db[server]['cups'][cup_name]
+        del self.db[guild]['cups'][cup_name]
         return True
 
-    def get_cup_db(self, server, cup_name):
+    def get_cup_db(self, guild, cup_name):
+        if guild not in self.db:
+            return None, "This guild is either not configured to run any cup" \
+                + "or its Database is still loading"
+
         cup_name = cup_name.upper()
 
         # If we didn't say which cup we wanted
         if len(cup_name) == 0:
-            num_cups = len(self.db[server]['cups'])
+            num_cups = len(self.db[guild]['cups'])
             # If there is only 1 cup running, return it
             if num_cups == 1:
-                return next(iter(self.db[server]['cups'].values())), None
+                return next(iter(self.db[guild]['cups'].values())), None
             elif num_cups == 0:
                 return None, 'No cup is running!'
             # Else, this is ambiguous
@@ -345,32 +353,35 @@ class RoleKeeper:
                 return None, 'There is more than one cup running!'
 
         # Else if the cup exists, return it
-        elif cup_name in self.db[server]['cups']:
-            return self.db[server]['cups'][cup_name], None
+        elif cup_name in self.db[guild]['cups']:
+            return self.db[guild]['cups'][cup_name], None
 
         # Else, fail
         else:
             return None, 'No such cup is running'
 
-    def find_cup_db(self, server, discord=None, captain=None, match=None, hunt=None):
+    def find_cup_db(self, guild, discord=None, captain=None, match=None, hunt=None):
+        if guild not in self.db:
+            return None, "This guild is not running any cups", None
+
         if discord: # SLOW!
-            for cup_name, db in self.db[server]['cups'].items():
+            for cup_name, db in self.db[guild]['cups'].items():
                 for id, captain in db['captains'].items():
                     if captain.discord == discord:
                         return db, None, captain
         elif captain:
-            for cup_name, db in self.db[server]['cups'].items():
+            for cup_name, db in self.db[guild]['cups'].items():
                 if captain in db['captains']:
                     return db, None, db['captains'][captain]
         elif match:
-            for cup_name, db in self.db[server]['cups'].items():
+            for cup_name, db in self.db[guild]['cups'].items():
                 if match in db['matches']:
                     return db, None, db['matches'][match]
         elif hunt:
-            for cup_name, db in self.db[server]['cups'].items():
+            for cup_name, db in self.db[guild]['cups'].items():
                 if 'hunt' in db \
-                   and 'channel' in db['hunt'] \
-                   and hunt == db['hunt']['channel']:
+                   and 'channel_id' in db['hunt'] \
+                   and hunt.id == db['hunt']['channel_id']:
                     return db, None, hunt
 
         return None, 'No cup was found that contains this user or match', None
@@ -378,13 +389,13 @@ class RoleKeeper:
     # Acknowledgement that we are succesfully connected to Discord
     async def on_ready(self):
 
-        for server in self.client.servers:
-            print('Server: {}'.format(server))
+        for guild in self.client.guilds:
+            print('Guild: {}'.format(guild))
 
-            if self.check_server(server):
-                await self.open_db(server)
+            if self.check_guild(guild):
+                await self.open_db(guild)
             else:
-                print ('WARNING: Server "{}" not configured!'.format(server.name))
+                print ('WARNING: Guild "{}" not configured!'.format(guild.name))
 
     async def on_dm(self, message):
         # If it is us sending the DM, exit
@@ -400,15 +411,15 @@ class RoleKeeper:
                        Feel free to ask a referee or admin instead :robot:''')
 
     async def on_member_join(self, member):
-        if member.server.name not in self.config['servers']:
+        if member.guild.name not in self.config['guilds']:
             return
 
         await self.handle_member_join(member)
 
     async def on_member_update(self, before, after):
-        server = after.server if after.server else before.server
+        guild = after.guild if after.guild else before.guild
 
-        if server.name not in self.config['servers']:
+        if guild.name not in self.config['guilds']:
             return
 
         before_discord_id = str(before)
@@ -418,7 +429,7 @@ class RoleKeeper:
         if before_discord_id == after_discord_id:
             return
 
-        _, _, captain = self.find_cup_db(server, captain=before.id)
+        _, _, captain = self.find_cup_db(guild, captain=before.id)
 
         # A known captain changed ID
         if captain:
@@ -428,7 +439,7 @@ class RoleKeeper:
             captain.discord = after_discord_id
         else:
             # Try to find the captain discord ID in the DB
-            _, error, _ = self.find_cup_db(after.server, discord=after_discord_id)
+            _, error, _ = self.find_cup_db(after.guild, discord=after_discord_id)
             if not error:
                 # If found, update him
                 await self.handle_member_join(after)
@@ -501,34 +512,34 @@ class RoleKeeper:
         else:
             return None
 
-    def cache_special_role(self, server, role_id):
+    def cache_special_role(self, guild, role_id):
         role_name = self.get_role_name(role_id)
         if not role_name:
             return None
 
         # Trick to make sure the structures are there
-        self.get_special_role(server, role_id)
+        self.get_special_role(guild, role_id)
 
-        role = discord.utils.get(server.roles, name=role_name)
+        role = discord.utils.get(guild.roles, name=role_name)
 
-        self.cache[server]['sroles'][role_id] = role
-        if not self.cache[server]['sroles'][role_id]:
-            print ('WARNING: Missing role "{}" in {}'.format(role_name, server.name))
+        self.cache[guild]['sroles'][role_id] = role
+        if not self.cache[guild]['sroles'][role_id]:
+            print ('WARNING: Missing role "{}" in {}'.format(role_name, guild.name))
 
-    def get_special_role(self, server, role_id):
+    def get_special_role(self, guild, role_id):
         if not self.cache:
             self.cache = {}
-        if server not in self.cache:
-            self.cache[server] = {}
-        if 'sroles' not in self.cache[server]:
-            self.cache[server]['sroles'] = {}
+        if guild not in self.cache:
+            self.cache[guild] = {}
+        if 'sroles' not in self.cache[guild]:
+            self.cache[guild]['sroles'] = {}
 
-        if role_id in self.cache[server]['sroles']:
-            return self.cache[server]['sroles'][role_id]
+        if role_id in self.cache[guild]['sroles']:
+            return self.cache[guild]['sroles'][role_id]
         return None
 
-    async def add_group(self, message, server, group_id, cup_name):
-        db, error = self.get_cup_db(server, cup_name)
+    async def add_group(self, message, guild, group_id, cup_name):
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -541,15 +552,15 @@ class RoleKeeper:
         # If group is new to us, cache it
         group_name = self.get_role_name('group', arg=group_id)
         role_color = self.get_role_color('group')
-        group_role = await self.get_or_create_role(server, group_name, color=role_color)
+        group_role = await self.get_or_create_role(guild, group_name, color=role_color)
         group = Group(group_id, group_name, group_role)
 
         db['groups'][group_id] = group
 
         return True
 
-    async def remove_group(self, message, server, group_id, cup_name):
-        db, error = self.get_cup_db(server, cup_name)
+    async def remove_group(self, message, guild, group_id, cup_name):
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -561,7 +572,7 @@ class RoleKeeper:
 
         group = db['groups'][group_id]
 
-        members = list(server.members)
+        members = list(guild.members)
         # Remove the group from each captain using it
         for uuid, captain in db['captains'].items():
             if captain.group and captain.group.name == group.name:
@@ -577,7 +588,7 @@ class RoleKeeper:
                     continue
 
                 try:
-                    await self.client.remove_roles(cpt, group.role)
+                    await cpt.remove_roles(group.role)
                     print ('Removed role "{grole}" from "{member}"'\
                            .format(member=str(member),
                                    grole=group.name))
@@ -592,8 +603,8 @@ class RoleKeeper:
 
         return True
 
-    async def add_captain(self, message, server, member, team, nick, group_id, cup_name):
-        db, error = self.get_cup_db(server, cup_name)
+    async def add_captain(self, message, guild, member, team, nick, group_id, cup_name):
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -602,7 +613,7 @@ class RoleKeeper:
 
         # If captain already exists, remove him
         if member.id in db['captains']:
-            await self.remove_captain(message, server, member, cup_name)
+            await self.remove_captain(message, guild, member, cup_name)
 
         # Check if destination group exists
         if group_id and group_id not in db['groups']:
@@ -623,8 +634,8 @@ class RoleKeeper:
 
         return True
 
-    async def update_captain(self, message, server, member, nickname, cup_name):
-        db, error = self.get_cup_db(server, cup_name)
+    async def update_captain(self, message, guild, member, nickname, cup_name):
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -673,14 +684,14 @@ class RoleKeeper:
 
         # Remove previous captain, may he joined or not
         if old_member and old_member != member:
-            await self.remove_captain(message, server, old_member, cup_name)
+            await self.remove_captain(message, guild, old_member, cup_name)
         else:
             del db['captains'][key]
 
         return True
 
-    async def update_team(self, message, server, team_name, new_name, cup_name):
-        db, error = self.get_cup_db(server, cup_name)
+    async def update_team(self, message, guild, team_name, new_name, cup_name):
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -711,7 +722,7 @@ class RoleKeeper:
 
         if team.role:
             try:
-                await self.client.edit_role(server, team.role, name=new_role_name)
+                await team.role.edit(name=new_role_name)
             except:
                 print('WARNING: Failed to rename role to "{}"'.format(new_role_name))
                 pass
@@ -720,7 +731,7 @@ class RoleKeeper:
                 new_nickname = self.get_nick_name(db, captain)
 
                 try:
-                    await self.client.change_nickname(captain.member, new_nickname)
+                    await captain.member.edit(nick=new_nickname)
                     print ('Renamed "{id}" to "{nick}"'\
                            .format(id=str(captain.member), nick=new_nickname))
                 except:
@@ -730,8 +741,8 @@ class RoleKeeper:
 
         return True
 
-    async def check_captain(self, message, server, member, cup_name):
-        db, error = self.get_cup_db(server, cup_name)
+    async def check_captain(self, message, guild, member, cup_name):
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -744,8 +755,8 @@ class RoleKeeper:
 
         return True
 
-    async def remove_captain(self, message, server, member, cup_name):
-        db, error = self.get_cup_db(server, cup_name)
+    async def remove_captain(self, message, guild, member, cup_name):
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -765,10 +776,10 @@ class RoleKeeper:
             if not captain.member or not match.is_in_match(captain.member):
                 continue
 
-            channel = discord.utils.get(server.channels, name=channel_name)
+            channel = discord.utils.get(guild.channels, name=channel_name)
             if channel:
                 try:
-                    await self.client.delete_channel_permissions(channel, member)
+                    await channel.set_permissions(member, overwrite=None)
 
                     print('Deleted permissions for "{discord}" in channel "<{channel}>"'\
                           .format(discord=discord_id,
@@ -791,7 +802,7 @@ class RoleKeeper:
 
         # Remove team, team captain and group roles from member
         try:
-            await self.client.remove_roles(member, *role_list)
+            await member.remove_roles(*role_list)
 
             print ('Removed roles <{roles}> from "{member}"'\
                    .format(member=discord_id,
@@ -804,7 +815,7 @@ class RoleKeeper:
 
         # Check if the role is now orphan, and delete it
 
-        members = list(server.members)
+        members = list(guild.members)
         team = captain.team
         team_role = team.role if team else None
         trole_name = team_role.name if team_role else ''
@@ -814,7 +825,7 @@ class RoleKeeper:
 
         if team_role and not any(r == team_role for m in members for r in m.roles):
             try:
-                await self.client.delete_role(server, team_role)
+                await team_role.delete()
                 print ('Deleted role "{role}"'\
                        .format(role=trole_name))
             except:
@@ -827,7 +838,7 @@ class RoleKeeper:
 
         # Reset member nickname
         try:
-            await self.client.change_nickname(member, None)
+            await member.edit(nick=None)
             print ('Reset nickname for "{member}"'\
                    .format(member=discord_id))
         except:
@@ -841,21 +852,21 @@ class RoleKeeper:
         return True
 
     # Go through the parsed captain list and create all team roles
-    async def create_all_teams(self, server, cup_name):
-        db, error = self.get_cup_db(server, cup_name)
+    async def create_all_teams(self, guild, cup_name):
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             print('ERROR create_all_teams: {}'.format(error))
             return False
 
         db['teams'] = {}
         for _, captain in db['captains'].items():
-            team = await self.create_team(server, db, captain.team_name)
+            team = await self.create_team(guild, db, captain.team_name)
             captain.team = team
 
         return True
 
     # Create team captain role
-    async def create_team(self, server, db, team_name):
+    async def create_team(self, guild, db, team_name):
         role_name = self.get_role_name('team', arg=team_name)
 
         if role_name in db['teams']:
@@ -863,7 +874,7 @@ class RoleKeeper:
 
         if db['with_roles']:
             role_color = self.get_role_color('team')
-            role = await self.get_or_create_role(server, role_name, color=role_color)
+            role = await self.get_or_create_role(guild, role_name, color=role_color)
         else:
             role = None
 
@@ -872,24 +883,24 @@ class RoleKeeper:
 
         return team
 
-    # Whenever a new member joins into the Discord server
+    # Whenever a new member joins into the Discord guild
     # 1. Create a user group just for the Team captain
     # 2. Assign the special group to that Team captain
     # 3. Assign the global group to that Team captain
     # 4. Change nickname of Team captain
     async def handle_member_join(self, member, db=None):
         discord_id = str(member)
-        server = member.server
+        guild = member.guild
         captain = None
 
         # If no db was provided
         if not db:
             # Find cup from discord_id
-            db, error, captain = self.find_cup_db(server, discord=discord_id)
+            db, error, captain = self.find_cup_db(guild, discord=discord_id)
 
             # User was not found by discord ID
             if error:
-                db, error, captain = self.find_cup_db(server, captain=member.id)
+                db, error, captain = self.find_cup_db(guild, captain=member.id)
 
                 # User was not found by unique ID
                 if error:
@@ -908,13 +919,13 @@ class RoleKeeper:
             #      .format(discord_id))
             return
 
-        print('Team captain "{}" joined server'\
+        print('Team captain "{}" joined guild'\
               .format(discord_id))
 
         role_list = []
 
         # Create role
-        team = await self.create_team(server, db, captain.team_name)
+        team = await self.create_team(guild, db, captain.team_name)
         captain.team = team
         team.captains[member.id] = captain
         captain.member = member
@@ -936,7 +947,7 @@ class RoleKeeper:
         role_names = [ r.name for r in role_list ]
         if len(role_list) > 0:
             try:
-                await self.client.add_roles(member, *role_list)
+                await member.add_roles(*role_list)
                 print('Assigned roles <{role}> to "{id}"'\
                       .format(role=role_names, id=discord_id))
             except:
@@ -948,7 +959,7 @@ class RoleKeeper:
 
         if nickname != member.nick:
             try:
-                await self.client.change_nickname(member, nickname)
+                await member.edit(nick=nickname)
                 print ('Renamed "{id}" to "{nick}"'\
                        .format(id=discord_id, nick=nickname))
             except:
@@ -961,13 +972,13 @@ class RoleKeeper:
             if not match.is_in_match(member):
                 continue
 
-            channel = discord.utils.get(server.channels, name=channel_name)
+            channel = discord.utils.get(guild.channels, name=channel_name)
             if channel:
                 try:
                     overwrite = discord.PermissionOverwrite()
                     overwrite.read_messages = True
                     overwrite.send_messages = True
-                    await self.client.edit_channel_permissions(channel, member, overwrite)
+                    await channel.set_permissions(member, overwrite=overwrite)
 
                     print('Edited permissions for channel "<{channel}>"'\
                           .format(channel=channel_name))
@@ -982,12 +993,12 @@ class RoleKeeper:
         acc = ''
         for l in msg.splitlines():
             if len(acc) + len(l) >= 2000:
-                await self.client.send_message(channel, acc)
+                await channel.send(content=acc)
                 acc = l
             else:
                 acc = '{}\n{}'.format(acc, l)
 
-        return await self.client.send_message(channel, acc)
+        return await channel.send(content=acc)
 
 
     # Reply to a message in a channel
@@ -1034,8 +1045,8 @@ class RoleKeeper:
     REUSE_NO  = 3
 
     # Create a match against 2 team roles
-    async def matchup_role(self, message, server, _roleteamA, _roleteamB, cat_id, cup_name, mode=MATCH_BO1, flip_coin=False, reuse=REUSE_UNK, url=None):
-        db, error = self.get_cup_db(server, cup_name)
+    async def matchup_role(self, message, guild, _roleteamA, _roleteamB, cat_id, cup_name, mode=MATCH_BO1, flip_coin=False, reuse=REUSE_UNK, url=None):
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False, None
@@ -1066,12 +1077,12 @@ class RoleKeeper:
             await self.reply(message, 'Role "{}" is not a known team'.format(notfound))
             return False, None
 
-        return await self.matchup(message, server, teamA, teamB, cat_id, cup_name,
+        return await self.matchup(message, guild, teamA, teamB, cat_id, cup_name,
                                   mode=mode, flip_coin=flip_coin, reuse=reuse, url=url)
 
     # Create a match against 2 team captains
-    async def matchup_cpt(self, message, server, _cptteamA, _cptteamB, cat_id, cup_name, mode=MATCH_BO1, flip_coin=False, reuse=REUSE_UNK, url=None):
-        db, error = self.get_cup_db(server, cup_name)
+    async def matchup_cpt(self, message, guild, _cptteamA, _cptteamB, cat_id, cup_name, mode=MATCH_BO1, flip_coin=False, reuse=REUSE_UNK, url=None):
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False, None
@@ -1102,13 +1113,13 @@ class RoleKeeper:
             await self.reply(message, '{} is not a captain of a known team'.format(cptteamB.mention))
             return False, None
 
-        return await self.matchup(message, server, teamA, teamB, cat_id, cup_name,
+        return await self.matchup(message, guild, teamA, teamB, cat_id, cup_name,
                                   mode=mode, flip_coin=flip_coin, reuse=reuse, url=url)
 
 
     # Create a match against 2 teams
-    async def matchup_team(self, message, server, _teamA, _teamB, cat_id, cup_name, mode=MATCH_BO1, flip_coin=False, reuse=REUSE_UNK, url=None):
-        db, error = self.get_cup_db(server, cup_name)
+    async def matchup_team(self, message, guild, _teamA, _teamB, cat_id, cup_name, mode=MATCH_BO1, flip_coin=False, reuse=REUSE_UNK, url=None):
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False, None
@@ -1141,11 +1152,11 @@ class RoleKeeper:
             await self.reply(message, '"{}" is not a known team'.format(notfound))
             return False, None
 
-        return await self.matchup(message, server, teamA, teamB, cat_id, cup_name,
+        return await self.matchup(message, guild, teamA, teamB, cat_id, cup_name,
                                   mode=mode, flip_coin=flip_coin, reuse=reuse, url=url)
 
     # Get a unique channel name
-    async def new_channel_name(self, server, message, db, base_name, reuse=REUSE_UNK):
+    async def new_channel_name(self, guild, message, db, base_name, reuse=REUSE_UNK):
         channel_name = base_name
         channel = None
         index = 1
@@ -1153,7 +1164,7 @@ class RoleKeeper:
 
         while True:
             channel_name = '{}{}'.format(base_name, index_str)
-            channel = discord.utils.get(server.channels, name=channel_name)
+            channel = discord.utils.get(guild.channels, name=channel_name)
 
             # Channel already exists, but we do not know if we should reuse it
             if (channel or channel_name in db['matches']) and reuse == self.REUSE_UNK:
@@ -1173,8 +1184,8 @@ class RoleKeeper:
     # 2. Add permissions to read/send to both teams, and the judge
     # 3. Send welcome message
     # 4. Register the match to internal logic for commands like !ban x !pick x
-    async def matchup(self, message, server, teamA, teamB, cat_id, cup_name, mode=MATCH_BO1, flip_coin=False, reuse=REUSE_UNK, url=None):
-        db, error = self.get_cup_db(server, cup_name)
+    async def matchup(self, message, guild, teamA, teamB, cat_id, cup_name, mode=MATCH_BO1, flip_coin=False, reuse=REUSE_UNK, url=None):
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False, None
@@ -1190,13 +1201,13 @@ class RoleKeeper:
 
         # Create the match
         if mode == self.MATCH_BO5:
-            match = MatchBo5(teamA, teamB, maps, emotes=self.emotes)
+            match = MatchBo5(teamA, teamB, maps, bot=self)
         elif mode == self.MATCH_BO3:
-            match = MatchBo3(teamA, teamB, maps, emotes=self.emotes)
+            match = MatchBo3(teamA, teamB, maps, bot=self)
         elif mode == self.MATCH_BO2:
-            match = MatchBo2(teamA, teamB, maps, emotes=self.emotes)
+            match = MatchBo2(teamA, teamB, maps, bot=self)
         else:
-            match = Match(teamA, teamB, maps, emotes=self.emotes)
+            match = Match(teamA, teamB, maps, bot=self)
 
         if url:
             match.url = url
@@ -1206,22 +1217,22 @@ class RoleKeeper:
         teamB_name_safe = sanitize_input(translit_input(teamB.name))
         topic = 'Match {} vs {}'.format(teamA.name, teamB.name)
 
-        ref_role = self.get_special_role(server, 'referee')
-        coref_role = self.get_special_role(server, 'coreferee')
+        ref_role = self.get_special_role(guild, 'referee')
+        coref_role = self.get_special_role(guild, 'coreferee')
 
         read_perms = discord.PermissionOverwrite(read_messages=True, send_messages=True)
         no_perms = discord.PermissionOverwrite(read_messages=False)
 
         channel_name = 'match_{}_vs_{}'.format(teamA_name_safe, teamB_name_safe)  # TODO cup
-        channel_name, channel = await self.new_channel_name(server, message, db, channel_name, reuse=reuse)
+        channel_name, channel = await self.new_channel_name(guild, message, db, channel_name, reuse=reuse)
         if not channel_name:
             return False, None
 
         category = None
-        if 'categories' in self.config['servers'][server.name] \
-           and cat_id in self.config['servers'][server.name]['categories']:
-            cat_name = self.config['servers'][server.name]['categories'][cat_id]
-            for ch in server.channels:
+        if 'categories' in self.config['guilds'][guild.name] \
+           and cat_id in self.config['guilds'][guild.name]['categories']:
+            cat_name = self.config['guilds'][guild.name]['categories'][cat_id]
+            for ch in guild.channels:
                 if cat_name.lower() in ch.name.lower():
                     category = ch
 
@@ -1230,26 +1241,25 @@ class RoleKeeper:
 
         if not channel:
             try:
-                overrides = [
-                    (server.default_role, no_perms),
-                    (server.me, read_perms),
-                    (ref_role, read_perms)
-                ]
+                overrides = {
+                    guild.default_role: no_perms,
+                    guild.me: read_perms,
+                    ref_role: read_perms
+                }
 
                 if coref_role:
-                    overrides.append( (coref_role, read_perms) )
+                    overrides[coref_role] = read_perms
 
                 for captain in teamA.captains.values():
                     if captain.member:
-                        overrides.append( (captain.member, read_perms) )
+                        overrides[captain.member] = read_perms
                 for captain in teamB.captains.values():
                     if captain.member:
-                        overrides.append( (captain.member, read_perms) )
+                        overrides[captain.member] = read_perms
 
-                channel = await self.client.create_channel(
-                    server,
+                channel = await guild.create_text_channel(
                     channel_name,
-                    *overrides,
+                    overwrites=overrides,
                     category=category)
 
                 print('Created channel "<{channel}>"'\
@@ -1260,9 +1270,7 @@ class RoleKeeper:
                 raise e
 
             try:
-                await self.client.edit_channel(
-                    channel,
-                    topic=topic)
+                await channel.edit(topic=topic)
 
                 print('Set topic for channel "<{channel}>" to "{topic}"'\
                       .format(channel=channel_name, topic=topic))
@@ -1281,8 +1289,8 @@ class RoleKeeper:
         return True, channel_name
 
     # Matchup for FFA cups - only text chat, no bot
-    async def matchup_ffa(self, message, server, round, match_num, cat_id, cup_name, reuse=REUSE_UNK, url=None, team_names=None, players_csv=None):
-        db, error = self.get_cup_db(server, cup_name)
+    async def matchup_ffa(self, message, guild, round, match_num, cat_id, cup_name, reuse=REUSE_UNK, url=None, team_names=None, players_csv=None):
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False, None
@@ -1338,22 +1346,22 @@ class RoleKeeper:
         match_safe = sanitize_input(translit_input(match_num))
         topic = 'Round {} - Match {}'.format(round, match_num)
 
-        ref_role = self.get_special_role(server, 'referee')
-        coref_role = self.get_special_role(server, 'coreferee')
+        ref_role = self.get_special_role(guild, 'referee')
+        coref_role = self.get_special_role(guild, 'coreferee')
 
         read_perms = discord.PermissionOverwrite(read_messages=True, send_messages=True)
         no_perms = discord.PermissionOverwrite(read_messages=False)
 
         channel_name = 'match_{}_{}'.format(round_safe, match_safe)  # TODO cup
-        channel_name, channel = await self.new_channel_name(server, message, db, channel_name, reuse=reuse)
+        channel_name, channel = await self.new_channel_name(guild, message, db, channel_name, reuse=reuse)
         if not channel_name:
             return False, None
 
         category = None
-        if 'categories' in self.config['servers'][server.name] \
-           and cat_id in self.config['servers'][server.name]['categories']:
-            cat_name = self.config['servers'][server.name]['categories'][cat_id]
-            for ch in server.channels:
+        if 'categories' in self.config['guilds'][guild.name] \
+           and cat_id in self.config['guilds'][guild.name]['categories']:
+            cat_name = self.config['guilds'][guild.name]['categories'][cat_id]
+            for ch in guild.channels:
                 if cat_name.lower() in ch.name.lower():
                     category = ch
 
@@ -1362,23 +1370,22 @@ class RoleKeeper:
 
         if not channel:
             try:
-                overrides = [
-                    (server.default_role, no_perms),
-                    (server.me, read_perms),
-                    (ref_role, read_perms)
-                ]
+                overrides = {
+                    guild.default_role: no_perms,
+                    guild.me: read_perms,
+                    ref_role: read_perms
+                }
 
                 if coref_role:
-                    overrides.append( (coref_role, read_perms) )
+                    overrides[coref_role] = read_perms
 
                 for captain in players:
                     if captain.member:
-                        overrides.append( (captain.member, read_perms) )
+                        overrides[captain.member] = read_perms
 
-                channel = await self.client.create_channel(
-                    server,
+                channel = await guild.create_text_channel(
                     channel_name,
-                    *overrides,
+                    overwrites=overrides,
                     category=category)
 
                 print('Created channel "<{channel}>"'\
@@ -1388,9 +1395,7 @@ class RoleKeeper:
                       .format(channel=channel_name))
 
             try:
-                await self.client.edit_channel(
-                    channel,
-                    topic=topic)
+                await channel.edit(topic=topic)
 
                 print('Set topic for channel "<{channel}>" to "{topic}"'\
                       .format(channel=channel_name, topic=topic))
@@ -1411,12 +1416,12 @@ class RoleKeeper:
 
     # Returns if a member is a team captain in the given channel
     def is_captain_in_match(self, member, channel, force=False):
-        server = member.server
+        guild = member.guild
 
-        if server not in self.db:
+        if guild not in self.db:
             return False
 
-        db, error, _ = self.find_cup_db(server, match=channel.name)
+        db, error, _ = self.find_cup_db(guild, match=channel.name)
         if error:
             return False
 
@@ -1430,11 +1435,11 @@ class RoleKeeper:
 
     # Ban a map
     async def ban_map(self, message, map_unsafe, force=False):
-        server = message.author.server
+        guild = message.author.guild
         channel = message.channel
         banned_map_safe = sanitize_input(translit_input(map_unsafe))
 
-        db, error, _ = self.find_cup_db(server, match=channel.name)
+        db, error, _ = self.find_cup_db(guild, match=channel.name)
         if error:
             return False
 
@@ -1446,11 +1451,11 @@ class RoleKeeper:
 
     # Pick a map
     async def pick_map(self, message, map_unsafe, force=False):
-        server = message.author.server
+        guild = message.author.guild
         channel = message.channel
         picked_map_safe = sanitize_input(translit_input(map_unsafe))
 
-        db, error, _ = self.find_cup_db(server, match=channel.name)
+        db, error, _ = self.find_cup_db(guild, match=channel.name)
         if error:
             return False
 
@@ -1462,11 +1467,11 @@ class RoleKeeper:
 
     # Choose sides
     async def choose_side(self, message, side_unsafe, force=False):
-        server = message.author.server
+        guild = message.author.guild
         channel = message.channel
         side_safe = sanitize_input(translit_input(side_unsafe))
 
-        db, error, _ = self.find_cup_db(server, match=channel.name)
+        db, error, _ = self.find_cup_db(guild, match=channel.name)
         if error:
             return False
 
@@ -1478,10 +1483,10 @@ class RoleKeeper:
 
     # Undo action
     async def undo_map(self, message):
-        server = message.author.server
+        guild = message.author.guild
         channel = message.channel
 
-        db, error, _ = self.find_cup_db(server, match=channel.name)
+        db, error, _ = self.find_cup_db(guild, match=channel.name)
         if error:
             return False
 
@@ -1493,10 +1498,10 @@ class RoleKeeper:
 
     # Close a match
     async def close_match(self, message):
-        server = message.author.server
+        guild = message.author.guild
         channel = message.channel
 
-        db, error, _ = self.find_cup_db(server, match=channel.name)
+        db, error, _ = self.find_cup_db(guild, match=channel.name)
         if error:
             return False
 
@@ -1511,11 +1516,11 @@ class RoleKeeper:
     # 2. Give permission to streamer to see match room
     # 3. Invite streamer to join it
     async def stream_match(self, message, match_id, streamer):
-        server = message.server
+        guild = message.guild
 
         member = message.author if not streamer else streamer
-        channel = discord.utils.get(server.channels, name=match_id)
-        db, error, _ = self.find_cup_db(server, match=match_id)
+        channel = discord.utils.get(guild.channels, name=match_id)
+        db, error, _ = self.find_cup_db(guild, match=match_id)
         match = db['matches'][match_id] if db and match_id in db['matches'] else None
 
         # If we found a channel with the given name
@@ -1525,8 +1530,8 @@ class RoleKeeper:
             return False
 
         # 1. Notify captains match will be streamed
-        await self.client.send_message(
-            channel, ':eye::popcorn: _{} will stream this match!_ :movie_camera::satellite:\n'
+        await channel.send(
+            content=':eye::popcorn: _{} will stream this match!_ :movie_camera::satellite:\n'
             ':arrow_forward: _8.9. The teams whose match will be officially streamed will have '
             '**only** 10 minutes to assemble._\n'\
             .format(md_bold(member.nick if member.nick else member.name)))
@@ -1535,13 +1540,13 @@ class RoleKeeper:
               .format(channel=channel.name,
                       member=str(member)))
 
-        if 'streamer_can_see_match' in self.config['servers'][server.name] \
-           and self.config['servers'][server.name]['streamer_can_see_match']:
+        if 'streamer_can_see_match' in self.config['guilds'][guild.name] \
+           and self.config['guilds'][guild.name]['streamer_can_see_match']:
 
             # 2. Give permission to streamer to see match room
             overwrite = discord.PermissionOverwrite()
             overwrite.read_messages = True
-            await self.client.edit_channel_permissions(channel, member, overwrite)
+            await channel.set_permissions(member, overwrite=overwrite)
 
             print('Gave permission to "{member}" to see channel "{channel}"'\
                   .format(channel=channel.name,
@@ -1559,11 +1564,11 @@ class RoleKeeper:
     # 1. Notify captains match will not be streamed
     # 2. Remove permission to streamer to see match room
     async def unstream_match(self, message, match_id, streamer):
-        server = message.server
+        guild = message.guild
 
         member = message.author if not streamer else streamer
-        channel = discord.utils.get(server.channels, name=match_id)
-        db, error, _ = self.find_cup_db(server, match=match_id)
+        channel = discord.utils.get(guild.channels, name=match_id)
+        db, error, _ = self.find_cup_db(guild, match=match_id)
         match = db['matches'][match_id] if db and match_id in db['matches'] else None
 
         # If we found a channel with the given name
@@ -1577,8 +1582,8 @@ class RoleKeeper:
             return False
 
         # 1. Notify captains match will not be streamed anymore
-        await self.client.send_message(
-            channel, ':door::walking: _{} will not stream this match anymore_\n'
+        await channel.send(
+            content=':door::walking: _{} will not stream this match anymore_\n'
             ':arrow_forward: You can start the match without him\n'\
             .format(md_bold(member.nick if member.nick else member.name)))
 
@@ -1586,11 +1591,11 @@ class RoleKeeper:
               .format(channel=channel.name,
                       member=str(member)))
 
-        if 'streamer_can_see_match' in self.config['servers'][server.name] \
-           and self.config['servers'][server.name]['streamer_can_see_match']:
+        if 'streamer_can_see_match' in self.config['guilds'][guild.name] \
+           and self.config['guilds'][guild.name]['streamer_can_see_match']:
 
             # 2. Remove permission from streamer to see match room
-            await self.client.delete_channel_permissions(channel, member)
+            await channel.set_permissions(member, overwrite=None)
             print('Removed permission from "{member}" to see channel "{channel}"'\
                   .format(channel=channel.name,
                   member=str(member)))
@@ -1607,10 +1612,10 @@ class RoleKeeper:
     # 4. Remove team captain and group roles from member
     # 5. Reset member nickname
     async def wipe_teams(self, message, cup_name):
-        server = message.server
+        guild = message.guild
         time_start = time.time()
 
-        db, error = self.get_cup_db(server, cup_name)
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -1630,7 +1635,7 @@ class RoleKeeper:
                 continue
 
             try:
-                await self.client.delete_role(server, team.role)
+                await team.role.delete()
                 print ('Deleted role "{role}"'\
                        .format(role=role_name))
             except:
@@ -1641,7 +1646,7 @@ class RoleKeeper:
         db['teams'].clear()
 
         # 2. Find all members with role team captain
-        members = list(server.members)
+        members = list(guild.members)
         total = len(members)
         current_i = 0
         for member in members: # TODO go through db instead
@@ -1650,9 +1655,9 @@ class RoleKeeper:
             if current_time > time_start + 10:
                 time_start = current_time
                 try:
-                    await self.client.edit_message(reply, '{reply}{percent}%'\
-                                                   .format(reply=reply_txt,
-                                                           percent=int((current_i/total)*100) ))
+                    await reply.edit(content='{reply}{percent}%'\
+                                     .format(reply=reply_txt,
+                                             percent=int((current_i/total)*100) ))
                 except:
                     pass
 
@@ -1678,7 +1683,7 @@ class RoleKeeper:
             # 4. Remove team captain and group roles from member
             if len(role_names) > 0:
                 try:
-                    await self.client.remove_roles(member, *role_list)
+                    await member.remove_roles(*role_list)
                     print ('Removed roles <{roles}> from "{member}"'\
                            .format(member=discord_id,
                                    roles=role_names))
@@ -1691,7 +1696,7 @@ class RoleKeeper:
             # 5. Reset member nickname
             if member.nick:
                 try:
-                    await self.client.change_nickname(member, None)
+                    await member.edit(nick=None)
                     print ('Reset nickname for "{member}"'\
                            .format(member=discord_id))
                 except:
@@ -1700,9 +1705,9 @@ class RoleKeeper:
 
         db['captains'].clear()
 
-        await self.client.edit_message(reply, '{mention} Deleted {count} teams.'\
-                                       .format(mention=message.author.mention,
-                                               count=count))
+        await reply.edit(content='{mention} Deleted {count} teams.'\
+                         .format(mention=message.author.mention,
+                                 count=count))
 
         return True
 
@@ -1715,9 +1720,9 @@ class RoleKeeper:
     # 1. Find all match channels that where created by the bot for this cup
     # 2. Delete channel
     async def wipe_matches(self, message, cup_name, mode=WIPE_ALL):
-        server = message.server
+        guild = message.guild
 
-        db, error = self.get_cup_db(server, cup_name)
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -1737,7 +1742,7 @@ class RoleKeeper:
             reply = None
 
         for channel_name, match in matches:
-            channel = discord.utils.get(server.channels, name=channel_name)
+            channel = discord.utils.get(guild.channels, name=channel_name)
 
             if not channel:
                 count = count - 1
@@ -1754,7 +1759,7 @@ class RoleKeeper:
                 continue
 
             try:
-                await self.client.delete_channel(channel)
+                await channel.delete()
                 print ('Deleted channel "{channel}"'\
                        .format(channel=channel_name))
             except:
@@ -1762,9 +1767,9 @@ class RoleKeeper:
                        .format(channel=channel_name))
 
         if reply:
-            await self.client.edit_message(reply, '{mention} Deleted {count} matches.'\
-                                           .format(mention=message.author.mention,
-                                                   count=count))
+            await reply.edit(content='{mention} Deleted {count} matches.'\
+                             .format(mention=message.author.mention,
+                                     count=count))
 
         return True
 
@@ -1773,7 +1778,7 @@ class RoleKeeper:
         count = len(l)
         for msg in l:
             try:
-                await self.client.delete_message(msg)
+                await msg.delete()
             except:
                 count = count - 1
                 print('WARNING: No permission to delete in "{}"'.format(channel.name))
@@ -1784,16 +1789,16 @@ class RoleKeeper:
 
     # Remove all messages that are not pinned in a given channel
     async def wipe_messages(self, message, channel):
-        server = message.server
+        guild = message.guild
 
         messages_to_delete = []
         old_messages_to_delete = []
         t_14days_ago = datetime.datetime.utcnow() - datetime.timedelta(days=14)
 
         try:
-            async for msg in self.client.logs_from(channel, limit=1000):
+            async for msg in channel.history(limit=1000):
                 if not msg.pinned:
-                    if msg.timestamp < t_14days_ago:
+                    if msg.created_at < t_14days_ago:
                         old_messages_to_delete.append(msg)
                     else:
                         messages_to_delete.append(msg)
@@ -1813,7 +1818,7 @@ class RoleKeeper:
             # Try to delete messages in bulk, if not older than 14 days
             try:
                 bulk_messages_to_delete = messages_to_delete[(i)*max_api_count:(i+1)*max_api_count]
-                await self.client.delete_messages(bulk_messages_to_delete)
+                await channel.delete_messages(bulk_messages_to_delete)
                 count += len(bulk_messages_to_delete)
             except:
                 # If there is any error, try to delete them 1 by 1 instead
@@ -1822,9 +1827,9 @@ class RoleKeeper:
         # Finally delete old messages
         count += await self.delete_messages_one_by_one(old_messages_to_delete)
 
-        await self.client.edit_message(reply, '{mention} Deleted {count} messages.'\
-                                       .format(mention=message.author.mention,
-                                               count=count))
+        await reply.edit(content='{mention} Deleted {count} messages.'\
+                         .format(mention=message.author.mention,
+                                 count=count))
         print ('Deleted {count} messages in "{channel}"'\
                .format(count=count, channel=channel.name))
 
@@ -1832,7 +1837,7 @@ class RoleKeeper:
 
     # Announcement message
     async def announce(self, msg, message):
-        server = message.server
+        guild = message.guild
 
         handle = Handle(self, message=message)
         await handle.broadcast('announcement', msg)
@@ -1841,12 +1846,12 @@ class RoleKeeper:
 
     # Export full list of members as CSV
     async def export_members(self, message):
-        server = message.server
+        guild = message.guild
 
         csv = io.BytesIO()
         csv.write('#discord_id;roles;nickname\n'.encode())
 
-        members = list(server.members)
+        members = list(guild.members)
         for member in members:
             discord_id = str(member)
             csv.write('"{discord}";"{roles}";"{nickname}"\n'\
@@ -1858,16 +1863,15 @@ class RoleKeeper:
         csv.seek(0)
 
         member_count = len(members)
-        filename = 'members-{}.csv'.format(self.config['servers'][server.name]['db'])
-        msg = '{mention} Here is the list of all {count} members in this Discord server'\
+        filename = 'members-{}.csv'.format(self.config['guilds'][guild.name]['db'])
+        msg = '{mention} Here is the list of all {count} members in this Discord guild'\
             .format(mention=message.author.mention,
                     count=member_count)
 
         try:
-            await self.client.send_file(message.channel,
-                                        csv,
-                                        filename=filename,
-                                        content=msg)
+            await message.channel.send(file=discord.File(fp=csv,
+                                                         filename=filename),
+                                       content=msg)
             print ('Sent member list ({})'.format(member_count))
         except Exception as e:
             print ('ERROR: Failed to send member list ({})'.format(member_count))
@@ -1879,9 +1883,9 @@ class RoleKeeper:
 
     # Export pick&ban stats for a running cup
     async def export_stats(self, message, cup_name):
-        server = message.server
+        guild = message.guild
 
-        db, error = self.get_cup_db(server, cup_name)
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -1929,15 +1933,14 @@ class RoleKeeper:
         csv.seek(0)
 
         filename = 'stats-{}-{}.csv'\
-            .format(self.config['servers'][server.name]['db'],
+            .format(self.config['guilds'][guild.name]['db'],
                     db['cup'].name)
         msg = '{mention} Here are the pick&ban stats'\
             .format(mention=message.author.mention)
 
         try:
-            await self.client.send_file(message.channel,
-                                        csv,
-                                        filename=filename,
+            await message.channel.send(file=discord.File(fp=csv,
+                                                         filename=filename),
                                         content=msg)
             print ('Sent pick&ban stats')
         except Exception as e:
@@ -1950,9 +1953,9 @@ class RoleKeeper:
 
     # Export captain list for a running cup
     async def export_captains(self, message, cup_name):
-        server = message.server
+        guild = message.guild
 
-        db, error = self.get_cup_db(server, cup_name)
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -1972,15 +1975,14 @@ class RoleKeeper:
         csv.seek(0)
 
         filename = 'captains-{}-{}.csv'\
-            .format(self.config['servers'][server.name]['db'],
+            .format(self.config['guilds'][guild.name]['db'],
                     db['cup'].name)
         msg = '{mention} Here is the captain list'\
             .format(mention=message.author.mention)
 
         try:
-            await self.client.send_file(message.channel,
-                                        csv,
-                                        filename=filename,
+            await message.channel.send(file=discord.File(fp=csv,
+                                                         filename=filename),
                                         content=msg)
             print ('Sent captain list')
         except Exception as e:
@@ -1997,12 +1999,12 @@ class RoleKeeper:
             and re.match('^.*[^ ]#[0-9]+$', did)
 
     async def fetch_text_attachment(self, attachment):
-        if attachment and 'url' in attachment:
+        if attachment and attachment.url:
             async with aiohttp.ClientSession() as client:
-                async with client.get(attachment['url']) as response:
+                async with client.get(attachment.url) as response:
                     assert response.status == 200, \
                         'Error code {} when fetching file {}'\
-                            .format(response.status, attachment['url'])
+                            .format(response.status, attachment.url)
 
                     # If the file uses UTF-8 with BOM (wink wink Excel) then this will
                     # skip the header, otherwise, it will treat the document as UTF-8
@@ -2013,15 +2015,15 @@ class RoleKeeper:
     # Check a CSV file before launching a cup
     # 1. Parse the CSV file
     # 2. For all parsed captains:
-    #    A. List all captains not in server
+    #    A. List all captains not in guild
     #    B. List all captains with invalid Discord ID
     #    C. List all captains with no Discord ID.
     async def check_cup(self, message, cup_name, attachment, checkonly=True):
         cup_name = cup_name.upper()
-        server = message.server
+        guild = message.guild
         time_start = time.time()
 
-        db, db_error = self.get_cup_db(server, cup_name)
+        db, db_error = self.get_cup_db(guild, cup_name)
 
         reply_txt = '{l} Checking members{imported}...'\
             .format(l=self.emotes['loading'],
@@ -2057,10 +2059,10 @@ class RoleKeeper:
 
         else:
             await self.reply(message, 'I do not remember checking that cup and you did not attach a CSV file to check ¯\_(ツ)_/¯')
-            await self.client.delete_message(reply)
+            await reply.delete()
             return False
 
-        members = list(server.members)
+        members = list(guild.members)
 
         # Check if there are not too many teams per groups and not duplicated entries
         temp_check_dict = {}
@@ -2077,18 +2079,18 @@ class RoleKeeper:
             else:
                 await self.reply(message, 'Duplicate team: {}. Operation cancelled'\
                                  .format(captain.team_name))
-                await self.client.delete_message(reply)
+                await reply.delete()
                 return False
 
         for group, count in temp_check_groups.items():
             if count >= 100:
                 await self.reply(message, 'Too many teams in group: {}. Operation cancelled'\
                                  .format(group))
-                await self.client.delete_message(reply)
+                await reply.delete()
                 return False
 
-        # Maximum of 250 roles in a given server
-        can_create_roles = (len(captains) + len(server.roles) < 240)
+        # Maximum of 250 roles in a given guild
+        can_create_roles = (len(captains) + len(guild.roles) < 240)
 
         # If this is not just a check, update database
         if not checkonly:
@@ -2102,7 +2104,7 @@ class RoleKeeper:
 
             for group_id, group in groups.items():
                 role_color = self.get_role_color('group')
-                group_role = await self.get_or_create_role(server, group.name, color=role_color)
+                group_role = await self.get_or_create_role(guild, group.name, color=role_color)
                 group.role = group_role
 
             for _, captain in captains.items():
@@ -2111,9 +2113,9 @@ class RoleKeeper:
             db['captains'] = captains
             db['groups'] = groups # TODO cup-ref?
 
-            await self.create_all_teams(server, cup_name)
+            await self.create_all_teams(guild, cup_name)
 
-            # Visit all members of the server
+            # Visit all members of the guild
             for member in members:
                 await self.handle_member_join(member, db)
 
@@ -2133,9 +2135,9 @@ class RoleKeeper:
             if current_time > time_start + 10:
                 time_start = current_time
                 try:
-                    await self.client.edit_message(reply, '{reply}{percent}%'\
-                                                   .format(reply=reply_txt,
-                                                           percent=int((current_i/total)*100) ))
+                    await reply.edit(content='{reply}{percent}%'\
+                                     .format(reply=reply_txt,
+                                             percent=int((current_i/total)*100) ))
                 except:
                     pass
 
@@ -2172,12 +2174,11 @@ class RoleKeeper:
             csv = io.BytesIO()
             csv.write(report.encode())
             csv.seek(0)
-            filename = 'check-{}-{}.txt'.format(self.config['servers'][server.name]['db'], cup_name)
+            filename = 'check-{}-{}.txt'.format(self.config['guilds'][guild.name]['db'], cup_name)
 
             try:
-                await self.client.send_file(message.channel,
-                                            csv,
-                                            filename=filename)
+                await message.channel.send(file=discord.File(fp=csv,
+                                                             filename=filename))
             except Exception as e:
                 print ('ERROR: Failed to send report')
 
@@ -2217,21 +2218,21 @@ class RoleKeeper:
 
         #await self.reply(message, report)
         await self.embed(message, title, body)
-        await self.client.delete_message(reply)
+        await reply.delete()
 
         return True
 
     # Start a cup
     async def start_cup(self, message, cup_name, attachment, selected_maps_key=None):
         cup_name = cup_name.upper()
-        server = message.server
+        guild = message.guild
 
         cup_role_name = self.get_role_name('captain', arg=cup_name)
         role_color = self.get_role_color('captain')
-        cup_role = await self.get_or_create_role(server, cup_role_name, color=role_color)
+        cup_role = await self.get_or_create_role(guild, cup_role_name, color=role_color)
 
         if not selected_maps_key:
-            selected_maps_key = self.config['servers'][server.name]['default_maps'];
+            selected_maps_key = self.config['guilds'][guild.name]['default_maps'];
 
         if selected_maps_key not in self.config['maps']:
             await self.reply(message, 'Unknown map pool key: {}'.format(selected_maps_key))
@@ -2239,7 +2240,7 @@ class RoleKeeper:
 
         cup = Cup(cup_name, cup_role, selected_maps_key)
 
-        self.open_cup_db(server, cup)
+        self.open_cup_db(guild, cup)
 
         if not await self.check_cup(message, cup_name, attachment, checkonly=False):
             return False
@@ -2248,14 +2249,14 @@ class RoleKeeper:
 
     # List active cups
     async def list_cups(self, message):
-        server = message.server
+        guild = message.guild
 
         error = False
         body = ''
 
-        if len(self.db[server]['cups']) > 0 or len(self.checked_cups) > 0:
+        if len(self.db[guild]['cups']) > 0 or len(self.checked_cups) > 0:
             title = 'Currently running cups'
-            for cup_name, cup in self.db[server]['cups'].items():
+            for cup_name, cup in self.db[guild]['cups'].items():
                 body = '{p}\n• `{name}` - {num}/{total}'\
                     .format(p=body,
                             name=cup_name,
@@ -2276,7 +2277,7 @@ class RoleKeeper:
     # Stop a running cup
     async def stop_cup(self, message, cup_name):
         cup_name = cup_name.upper()
-        server = message.server
+        guild = message.guild
 
         if cup_name.upper() in self.checked_cups:
             del self.checked_cups[cup_name.upper()]
@@ -2292,7 +2293,7 @@ class RoleKeeper:
         if not await self.wipe_matches(message, cup_name):
             return False
 
-        if not self.close_cup_db(server, cup_name):
+        if not self.close_cup_db(guild, cup_name):
             await self.reply(message, 'No such cup')
             return False
 
@@ -2300,9 +2301,9 @@ class RoleKeeper:
 
     ## Register a driver to run a given cup
     async def sync_cup(self, message, cup_name, url, cat_id):
-        server = message.server
+        guild = message.guild
 
-        db, error = self.get_cup_db(server, cup_name)
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -2312,23 +2313,31 @@ class RoleKeeper:
             await db['driver'].stop()
             del db['driver']
 
+        # # Reload the driver module from sources
+        # # while this is a work-in-progress
+        # import sys
+        # try:
+        #     del sys.modules['esports_driver']
+        # except KeyError:
+        #     pass
 
+        # from esports_driver import EsportsDriver
 
         driver = EsportsDriver(self, db, url, cup_name, cat_id)
 
         db['driver'] = driver
 
         handle = Handle(self, message=message)
-        driver.start(server, handle)
+        driver.start(guild, handle)
         # TODO
 
         return True
 
     ## Unregister the running driver for the given cup
     async def desync_cup(self, message, cup_name):
-        server = message.server
+        guild = message.guild
 
-        db, error = self.get_cup_db(server, cup_name)
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -2341,11 +2350,17 @@ class RoleKeeper:
 
         return True
 
-    def is_broadcast_enabled(self, server):
-        if server not in self.db:
+    def is_carousel_enabled(self):
+        return 'carousel' in self.config \
+            and self.config['carousel'] \
+            and 'visible' in self.config['carousel'] \
+            and self.config['carousel']['visible']
+
+    def is_broadcast_enabled(self, guild):
+        if guild not in self.db:
             return False
 
-        db = self.db[server]
+        db = self.db[guild]
 
         if 'bcast' not in db:
             return False
@@ -2357,9 +2372,9 @@ class RoleKeeper:
 
     ## Set broadcast mode
     async def broadcast_mode(self, message, mode):
-        server = message.server
+        guild = message.guild
 
-        db = self.db[server]
+        db = self.db[guild]
         new_mode = True if mode == RoleKeeper.BCAST_ON else False
         db['bcast'] = new_mode
 
@@ -2367,17 +2382,17 @@ class RoleKeeper:
 
     ## Reload config
     async def reload_config(self, message):
-        server = message.server
+        guild = message.guild
 
         self.config = self.get_config(self.config_file)
 
-        return True
+        return self.config != None
 
     ## Open captain hunt
     async def start_hunt(self, message, cup_name, channel):
-        server = message.server
+        guild = message.guild
 
-        db, error = self.get_cup_db(server, cup_name)
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -2387,7 +2402,7 @@ class RoleKeeper:
             del db['hunt']
 
         hunt = {
-            'channel': channel
+            'channel_id': channel.id
         }
 
         # TODO Welcome message?
@@ -2398,11 +2413,11 @@ class RoleKeeper:
 
     ## Message in captain hunt channel
     async def on_hunt_message(self, message, db):
-        server = message.server
+        guild = message.guild
 
         if not db:
             # Find cup from channel
-            db, error, _ = self.find_cup_db(server, hunt=message.channel)
+            db, error, _ = self.find_cup_db(guild, hunt=message.channel)
 
             # Hunt was not found
             if error:
@@ -2423,24 +2438,24 @@ class RoleKeeper:
 
         # If no match, gently delete the message after 5 seconds
         if len(matching_nickname) == 0 and len(matching_teamname) == 0:
-            await self.client.add_reaction(message, '\N{NO ENTRY}')
+            await message.add_reaction('\N{NO ENTRY}')
             await asyncio.sleep(5)
-            await self.client.delete_message(message)
+            await message.delete()
             return
 
         # Look up in team names first
         elif len(matching_teamname) == 1 and len(matching_nickname) == 0:
             captain = matching_teamname[0]
-            ret = await self.update_captain(None, server, message.author, captain.nickname, cup_name)
+            ret = await self.update_captain(None, guild, message.author, captain.nickname, cup_name)
 
         # Then only, search for the nicknames
         elif len(matching_teamname) == 0 and len(matching_nickname) == 1:
             captain = matching_nickname[0]
-            ret = await self.update_captain(None, server, message.author, captain.nickname, cup_name)
+            ret = await self.update_captain(None, guild, message.author, captain.nickname, cup_name)
 
         # More than one match
         else:
-            ref_role = self.get_special_role(server, 'referee')
+            ref_role = self.get_special_role(guild, 'referee')
             if ref_role:
                 await self.send(message.channel,
                                 '{ref}: More than one result for {info} in cup {cup}'\
@@ -2450,14 +2465,13 @@ class RoleKeeper:
             ret = False
 
 
-        await self.client.add_reaction(message,
-                                       '\N{WHITE HEAVY CHECK MARK}' if ret else '\N{NO ENTRY}')
+        await message.add_reaction('\N{WHITE HEAVY CHECK MARK}' if ret else '\N{NO ENTRY}')
 
     ## Close captain hunt
     async def stop_hunt(self, message, cup_name):
-        server = message.server
+        guild = message.guild
 
-        db, error = self.get_cup_db(server, cup_name)
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -2477,9 +2491,9 @@ class RoleKeeper:
     ## - Update captain nickname
     ## - Update captain discord ID
     async def update_cup(self, message, cup_name, attachment):
-        server = message.server
+        guild = message.guild
 
-        db, error = self.get_cup_db(server, cup_name)
+        db, error = self.get_cup_db(guild, cup_name)
         if error:
             await self.reply(message, error)
             return False
@@ -2507,7 +2521,7 @@ class RoleKeeper:
             if group.role:
                 continue
             role_color = self.get_role_color('group')
-            group_role = await self.get_or_create_role(server, group.name, color=role_color)
+            group_role = await self.get_or_create_role(guild, group.name, color=role_color)
             group.role = group_role
 
         remove_discord_list = []
@@ -2536,7 +2550,7 @@ class RoleKeeper:
             if not old_captain:
                 # Add him to DB
                 db['captains'][new_key] = new_captain
-                team = await self.create_team(server, db, new_captain.team_name)
+                team = await self.create_team(guild, db, new_captain.team_name)
                 new_captain.team = team
                 update_discord_list.append(new_captain)
                 print('Add captain "{nick}" for team "{team}"'\
@@ -2558,7 +2572,7 @@ class RoleKeeper:
                     # Update key in DB
                     db['captains'][new_key] = old_captain
 
-                    # If the captain is already in the server
+                    # If the captain is already in the guild
                     if old_captain.member:
                         # Remove him later
                         remove_discord_list.append(old_captain.member)
@@ -2567,6 +2581,7 @@ class RoleKeeper:
                         del db['captains'][old_key]
 
                     # Update the discord ID
+                    old_captain.key = new_key
                     old_captain.discord = new_captain.discord
                     old_captain.member = None
                     update_discord_list.append(old_captain)
@@ -2585,12 +2600,12 @@ class RoleKeeper:
                                    B=old_captain.group.id if old_captain.group else None,
                                    cpt=old_captain.nickname))
 
-                    # If the captain is already in the server
+                    # If the captain is already in the guild
                     if old_captain.member:
                         # Change group role for member
                         try:
-                            await self.client.remove_roles(old_captain.member, old_group.role)
-                            await self.client.add_roles(old_captain.member, old_captain.group.role)
+                            await old_captain.member.remove_roles(old_group.role)
+                            await old_captain.member.add_roles(old_captain.group.role)
 
                             print ('Changed role <{roleA}> to <{roleB}> from "{member}"'\
                                    .format(member=old_captain.discord,
@@ -2607,7 +2622,7 @@ class RoleKeeper:
         captain_set.update(update_group_list)
         count = len(captain_set)
 
-        members = list(server.members)
+        members = list(guild.members)
         for captain in update_discord_list:
             member = discord.utils.find(lambda m: str(m) == captain.discord, members)
             if member:
@@ -2615,11 +2630,11 @@ class RoleKeeper:
 
         for member in remove_discord_list:
             print('Remove captain {}'.format(str(member)))
-            await self.remove_captain(message, server, member, cup_name)
+            await self.remove_captain(message, guild, member, cup_name)
 
-        await self.client.edit_message(reply, '{mention} Updated {count} captains.'\
-                                       .format(mention=message.author.mention,
-                                               count=count))
+        await reply.edit(content='{mention} Updated {count} captains.'\
+                        .format(mention=message.author.mention,
+                                count=count))
         print ('Updated {count} captains'\
                .format(count=count))
 

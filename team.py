@@ -40,9 +40,9 @@ class CustomRole:
 
         return state
 
-    async def resume(self, server, bot, db):
+    async def resume(self, guild, bot, db):
         if hasattr(self, '_role_id'):
-            self.role = discord.utils.get(server.roles, id=self._role_id) \
+            self.role = guild.get_role(self._role_id) \
                         if self._role_id else None
 
 ### Class that holds information about a cup
@@ -63,11 +63,20 @@ class Cup(CustomRole):
 ### Class that holds information about a group
 class Group(CustomRole):
     def __init__(self, id, name, role):
-        self.id = id
         CustomRole.__init__(self, name, role)
+        self.id = id
 
     def __str__(self):
         return self.name
+
+    ## Override pickle serialization
+    def __getstate__(self):
+        state = super().__getstate__()
+        state.update({
+            'id': self.id
+        })
+
+        return state
 
 ### Class that holds information about a team
 class Team(CustomRole):
@@ -108,6 +117,9 @@ class TeamCaptain:
         # Discord object will in be filled later
         self.member = None
 
+        # TODO Workaround
+        self.key = None
+
     def __str__(self):
         return '{nick} - {team} - {g} ({id})'\
             .format(nick=self.nickname,
@@ -125,6 +137,7 @@ class TeamCaptain:
             'group': self.group,
             'cup': self.cup,
             'team': self.team,
+            'key': self.key,
             '_member_id': self.member.id \
                             if hasattr(self, 'member') and self.member \
                             else self._member_id \
@@ -134,7 +147,7 @@ class TeamCaptain:
 
         return state
 
-    async def resume(self, server, bot, db):
+    async def resume(self, guild, bot, db):
         if hasattr(self, '_member_id'):
-            self.member = discord.utils.get(server.members, id=self._member_id) \
+            self.member = guild.get_member(self._member_id) \
                           if self._member_id else None

@@ -29,6 +29,7 @@
     },
 
     "carousel": {
+        "visible": false,
         "save_path": ""
     },
 
@@ -55,7 +56,7 @@
         "test": [ "Lorem", "Ipsum", "Dolor", "Sit", "Amet", "Consectetur", "Adipiscing" ]
     },
 
-    "servers": {
+    "guilds": {
         "RoleKeeperTestSuite": {
             "db": "test",
             "default_maps": "test",

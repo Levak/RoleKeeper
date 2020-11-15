@@ -27,95 +27,13 @@ import sys
 
 from rolekeeper import RoleKeeper
 
-client = discord.Client()
-
-
-
-
-##############################################################################
-# The following is a hack to backport category support in discord.py 'async' #
-##############################################################################
-
-import types
-
-def http_create_channel(self, guild_id, name, channel_type, parent_id=None, permission_overwrites=None):
-    payload = {
-        'name': name,
-        'type': channel_type
-    }
-
-    if permission_overwrites is not None:
-        payload['permission_overwrites'] = permission_overwrites
-
-    if parent_id is not None:
-        payload['parent_id'] = parent_id
-
-    if payload['type'] == 'text':
-        payload['type'] = 0
-
-    return self.request(discord.http.Route('POST', '/guilds/{guild_id}/channels', guild_id=guild_id), json=payload)
-
-client.http.create_channel = types.MethodType(http_create_channel, client.http)
-
-
-@asyncio.coroutine
-def create_channel(self, server, name, *overwrites, category=None, type=None):
-    if type is None:
-        type = discord.ChannelType.text
-
-    perms = []
-    for overwrite in overwrites:
-        target = overwrite[0]
-        perm = overwrite[1]
-        if not isinstance(perm, discord.PermissionOverwrite):
-            raise discord.InvalidArgument('Expected PermissionOverwrite received {0.__name__}'.format(type(perm)))
-
-        allow, deny = perm.pair()
-        payload = {
-            'allow': allow.value,
-            'deny': deny.value,
-            'id': target.id
-        }
-
-        if isinstance(target, discord.User):
-            payload['type'] = 'member'
-        elif isinstance(target, discord.Role):
-            payload['type'] = 'role'
-        else:
-            raise discord.InvalidArgument('Expected Role, User, or Member target, received {0.__name__}'.format(type(target)))
-
-        perms.append(payload)
-
-    parent_id = category.id if category else None
-    data = yield from self.http.create_channel(server.id, name, str(type), parent_id=parent_id, permission_overwrites=perms)
-    channel = discord.Channel(server=server, **data)
-    return channel
-
-client.create_channel = types.MethodType(create_channel, client)
-
-from discord import channel
-class _Overwrites:
-    __slots__ = ('id', 'allow', 'deny', 'type')
-
-    def __init__(self, **kwargs):
-        self.id = kwargs.pop('id')
-        self.allow = kwargs.pop('allow', 0)
-        self.deny = kwargs.pop('deny', 0)
-        self.type = kwargs.pop('type')
-
-    def _asdict(self):
-        return {
-            'id': self.id,
-            'allow': self.allow,
-            'deny': self.deny,
-            'type': self.type,
-        }
-channel.Overwrites = _Overwrites
-
-############################################################################
-#                                End of hack                               #
-############################################################################
-
+intents = discord.Intents.default()
+intents.guilds = True
+intents.members = True
+#intents.presences = True
+intents.messages = True
+#intents.reactions = True
+client = discord.Client(intents=intents)
 
 
 
@@ -143,15 +61,15 @@ async def on_message(message):
         return
 
     # If message is a DM
-    if type(message.author) is discord.User:
+    if isinstance(message.channel, discord.abc.PrivateChannel):
         await rk.on_dm(message)
         return
 
-    # If message came from a non-configured server, skip
-    if not rk.check_server(message.server):
+    # If message came from a non-configured guild, skip
+    if not rk.check_guild(message.guild):
         return
 
-    is_admin = message.author.server_permissions.manage_roles
+    is_admin = message.author.guild_permissions.manage_roles
     is_ref = discord.utils.get(message.author.roles, name=rk.config['roles']['referee']['name']) or is_admin
     is_captain_in_match = rk.is_captain_in_match(message.author, message.channel, is_admin or is_ref)
     is_streamer = discord.utils.get(message.author.roles, name=rk.config['roles']['streamer']['name']) or is_ref
@@ -160,7 +78,7 @@ async def on_message(message):
         return
 
     # Bypass command line when message is in a captain hunt channel
-    _db, _error, _ = rk.find_cup_db(message.author.server, hunt=message.channel)
+    _db, _error, _ = rk.find_cup_db(message.guild, hunt=message.channel)
     if not _error and not is_ref:
         await rk.on_hunt_message(message, _db)
         return
@@ -322,7 +240,7 @@ async def on_message(message):
         elif command == '!add_group' and is_ref:
             if len(parts) >= 1:
                 ret = await rk.add_group(message,
-                                         message.author.server,
+                                         message.guild,
                                          parts[0],
                                          parts[1] if len(parts) >= 2 else '')
             else:
@@ -332,7 +250,7 @@ async def on_message(message):
         elif command == '!remove_group' and is_ref:
             if len(parts) >= 1:
                 ret = await rk.remove_group(message,
-                                            message.author.server,
+                                            message.guild,
                                             parts[0],
                                             parts[1] if len(parts) >= 2 else '')
             else:
@@ -340,10 +258,14 @@ async def on_message(message):
                                'Too much or not enough arguments:\n```!remove_group group [cup]```')
 
         elif command == '!add_captain' and is_ref:
-            if len(message.mentions) == 1 and len(parts) >= 4:
+            member = message.mentions[0] if len(message.mentions) >= 1 \
+                     else message.guild.get_member(int(parts[0])) if len(parts) >= 4 and parts[0].isdigit() \
+                          else None
+
+            if member:
                 ret = await rk.add_captain(message,
-                                           message.author.server,
-                                           message.mentions[0], # TODO check it's the first argument?
+                                           message.guild,
+                                           member,
                                            parts[1],
                                            parts[2],
                                            parts[3] if parts[3] != '-' else None,
@@ -353,10 +275,14 @@ async def on_message(message):
                                'Too much or not enough arguments:\n```!add_captain @xxx team nick group|- [cup]```')
 
         elif command == '!update_captain' and is_ref:
-            if len(message.mentions) == 1 and len(parts) > 1:
+            member = message.mentions[0] if len(message.mentions) >= 1 \
+                     else message.guild.get_member(int(parts[0])) if len(parts) >= 2 and parts[0].isdigit() \
+                          else None
+
+            if member:
                 ret = await rk.update_captain(message,
-                                              message.author.server,
-                                              message.mentions[0],
+                                              message.guild,
+                                              member,
                                               parts[1],
                                               parts[2] if len(parts) > 2 else '')
             else:
@@ -366,7 +292,7 @@ async def on_message(message):
         elif command == '!update_team' and is_ref:
             if len(parts) >= 2:
                 ret = await rk.update_team(message,
-                                           message.author.server,
+                                           message.guild,
                                            parts[0],
                                            parts[1],
                                            parts[2] if len(parts) > 2 else '')
@@ -375,20 +301,28 @@ async def on_message(message):
                                'Too much or not enough arguments:\n```!update_team team_name new_name [cup]```')
 
         elif command == '!remove_captain' and is_ref:
-            if len(message.mentions) == 1:
+            member = message.mentions[0] if len(message.mentions) >= 1 \
+                     else message.guild.get_member(int(parts[0])) if len(parts) >= 1 and parts[0].isdigit() \
+                          else None
+
+            if member:
                 ret = await rk.remove_captain(message,
-                                              message.author.server,
-                                              message.mentions[0],
+                                              message.guild,
+                                              member,
                                               parts[1] if len(parts) > 1 else '')
             else:
                 await rk.reply(message,
                                'Too much or not enough arguments:\n```!remove_captain @xxx [cup]```')
 
         elif command == '!check_captain' and is_ref:
-            if len(message.mentions) == 1:
+            member = message.mentions[0] if len(message.mentions) >= 1 \
+                     else message.guild.get_member(int(parts[0])) if len(parts) >= 1 and parts[0].isdigit() \
+                          else None
+
+            if member:
                 ret = await rk.check_captain(message,
-                                              message.author.server,
-                                              message.mentions[0],
+                                              message.guild,
+                                              member,
                                               parts[1] if len(parts) > 1 else '')
             else:
                 await rk.reply(message,
@@ -414,7 +348,7 @@ async def on_message(message):
 
             if len(message.role_mentions) == 2:
                 ret, _ = await rk.matchup_role(message,
-                                               message.author.server,
+                                               message.guild,
                                                message.role_mentions[0],
                                                message.role_mentions[1],
                                                cat_id,
@@ -423,7 +357,7 @@ async def on_message(message):
                                                reuse=reuse_mode)
             elif len(message.mentions) == 2:
                 ret, _ = await rk.matchup_cpt (message,
-                                               message.author.server,
+                                               message.guild,
                                                message.mentions[0],
                                                message.mentions[1],
                                                cat_id,
@@ -432,7 +366,7 @@ async def on_message(message):
                                                reuse=reuse_mode)
             elif len(parts) >= 2:
                 ret, _ = await rk.matchup_team(message,
-                                               message.author.server,
+                                               message.guild,
                                                parts[0],
                                                parts[1],
                                                cat_id,
@@ -465,7 +399,7 @@ async def on_message(message):
 
             if round and match and len(message.mentions) > 0:
                 ret, _ = await rk.matchup_ffa (message,
-                                               message.author.server,
+                                               message.guild,
                                                round,
                                                match,
                                                cat_id,
@@ -474,7 +408,7 @@ async def on_message(message):
                                                reuse=reuse_mode)
             elif round and match and len(message.attachments) > 0:
                 ret, _ = await rk.matchup_ffa (message,
-                                               message.author.server,
+                                               message.guild,
                                                round,
                                                match,
                                                cat_id,
@@ -485,7 +419,7 @@ async def on_message(message):
                 end = -2 if len(cup_name) > 0 and cat_id else -1 if len(cup_name) > 0 or cat_id else 0
                 names = [ p.replace(',', '') for p in (parts[2:end] if end < 0 else parts[2:]) ]
                 ret, _ = await rk.matchup_ffa (message,
-                                               message.author.server,
+                                               message.guild,
                                                round,
                                                match,
                                                cat_id,
@@ -510,9 +444,9 @@ async def on_message(message):
                 channel_id = parts[0]
                 if channel_id.startswith('<'):
                     channel_id = channel_id[2:-1]
-                    channel = discord.utils.get(message.author.server.channels, id=channel_id)
+                    channel = message.guild.get_channel(int(channel_id))
                 else:
-                    channel = discord.utils.get(message.author.server.channels, name=channel_id)
+                    channel = discord.utils.get(message.guild.channels, name=channel_id)
 
                 if channel:
                     msg = args.replace(parts[0], '', 1)
@@ -589,18 +523,26 @@ async def on_message(message):
         #-------------------
 
         elif command == '!stream' and is_streamer:
-            if len(parts) > 0:
+            channel_name = message.channel_mentions[0].name if len(message.channel_mentions) > 0 \
+                      else parts[0] if len(parts) > 0 \
+                           else None
+
+            if channel_name:
                 ret = await rk.stream_match(message,
-                                            parts[0],
+                                            channel_name,
                                             message.mentions[0] if len(message.mentions) > 0 else None)
             else:
                 await rk.reply(message,
                                'Not enough arguments:\n```!stream channel_id [@streamer]```')
 
         elif command == '!unstream' and is_streamer:
-            if len(parts) > 0:
+            channel_name = message.channel_mentions[0].name if len(message.channel_mentions) > 0 \
+                      else parts[0] if len(parts) > 0 \
+                           else None
+
+            if channel_name:
                 ret = await rk.unstream_match(message,
-                                              parts[0],
+                                              channel_name,
                                               message.mentions[0] if len(message.mentions) > 0 else None)
             else:
                 await rk.reply(message,
@@ -617,8 +559,7 @@ async def on_message(message):
         exception = e
 
     try:
-        await rk.client.add_reaction(message,
-                                     '\N{WHITE HEAVY CHECK MARK}' if ret else '\N{NO ENTRY}')
+        await message.add_reaction('\N{WHITE HEAVY CHECK MARK}' if ret else '\N{NO ENTRY}')
     except:
         pass
 

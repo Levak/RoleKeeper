@@ -190,6 +190,8 @@ $ source ./env/bin/activate
    [Discord application registration page](https://discordapp.com/developers/applications/me#top)
    and create an app with a bot.
 
+   In there, enable **"SERVER MEMBERS INTENT"** in the _"Priviledged Gateway Intents"_.
+
 4. Edit `config.json` and:
    1. Fill `app_bot_token` with the _APP BOT USER_ token;
    2. Change or add a discord server with its member list;
@@ -212,14 +214,16 @@ $ source ./env/bin/activate
    from the bot app page)
 
 ```
-https://discordapp.com/oauth2/authorize?client_id=BOT_CLIENT_ID&scope=bot&permissions=402705488
+https://discordapp.com/oauth2/authorize?client_id=BOT_CLIENT_ID&scope=bot&permissions=403172432
 ```
 
 This link should give the following permissions:
  - Manage roles;
  - Manage nicknames;
  - Manage channels;
- - Read/Send messages.
+ - Manage messages;
+ - Read message history;
+ - Read/Send messages (+attach, +react, +embed).
 
 **Note**: Make sure the bot role is just below the admin role (above the roles
   it manages)
@@ -274,7 +278,7 @@ Once everything is setup, the only things to repeat are steps 8 to 12.
 
 The bot is configurable at startup with the file `config.json`. This file
 defines all the variable parameters supported by RoleKeeper, such as role
-names, member list path per servers, broadcast lists, etc.
+names, member list path per guilds, broadcast lists, etc.
 
 Here is an example of configuration file:
 
@@ -296,7 +300,7 @@ Here is an example of configuration file:
         "test": [ "Lorem", "Ipsum", "Dolor", "Sit", "Amet", "Consectetur", "Adipiscing" ]
     },
 
-    "servers": {
+    "guilds": {
         "June Fast Cup": {
             "db": "jfc",
             "default_maps": "ptb",
@@ -377,34 +381,34 @@ the _APP BOT TOKEN_.
 **Dict of List of String**. All the available maps for the pick & ban
   sequences indexed by "key". May contain any number of maps per key. "key" is
   used to reference a map pool in `!start_cup` and in
-  [`servers/.../default_maps`](#serversdefault_maps).
+  [`guilds/.../default_maps`](#guildsdefault_maps).
 
-### `servers/.../db`
+### `guilds/.../db`
 
 **String**. Name of the persistent storage DB on the disk (unique per server).
 
-### `servers/.../default_maps`
+### `guilds/.../default_maps`
 
 **String**. Key referencing the map pool defined in [`maps/...`](#maps).
 
-### `servers/.../rooms/match_created`
+### `guilds/.../rooms/match_created`
 
 **List of String**. Channels that will receive match creation notifications,
   when either `!bo1` or `!bo3` is used.
 
-### `servers/.../rooms/match_starting`
+### `guilds/.../rooms/match_starting`
 
 **List of String**. Channels that will receive match start notifications, when
   ever the pick & ban sequence has ended.
 
-### `servers/.../streamer_can_see_match`
+### `guilds/.../streamer_can_see_match`
 
 **Boolean**. If `true`, then when creating a match, a streamer that uses the
   `!stream` command will be able to see (read-only) the said rooms. Useful
   when the streamer needs to see the pick&ban sequence, or know when/if the
   match is about to start.
 
-### `servers/.../categories/...`
+### `guilds/.../categories/...`
 
 **Dict of String**. Discord channel category shortcuts. e.g.
 
@@ -483,6 +487,9 @@ unable to pick or ban maps.
 Driver specific to https://esports.mail.ru and https://esports.my.com to
 automatically start pick & ban rooms based on available matches.
 
+**Note**: This is **outdated** as the websites merged into https://pvp.gg
+which has its own online pick-ban system.
+
 ### Handling
 
 #### Admin commands
@@ -519,7 +526,7 @@ The following fields are added into the configuration file:
 - [x] Reparse `members.csv` or provide a more dynamic way of adding team
   captains at the _last-minute_
 - [x] Cross-server non-interference (When the bot is invited in several
-  Discord servers, it will run on the same member list)
+  Discord guilds, it will run on the same member list)
 - [x] Take `config.json` as parameter
 - [x] Configurable role names and list
 - [x] Configurable map list
@@ -542,6 +549,7 @@ The following fields are added into the configuration file:
   new discord.py)
 - [x] Export pick/ban stats command, or on `!stop_cup`
 - [x] `!export_members` to export server member list
-- [ ] `!unstream x` to cancel `!stream x`.
+- [x] `!unstream x` to cancel `!stream x`.
 - [x] `!undo` to undo a `!ban` or `!pick`
 - [x] unlimited and dynamid map pools instead of just 7 maps
+- [ ] Replace Esports Driver with a Toornament Driver
