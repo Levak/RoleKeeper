@@ -422,6 +422,39 @@ class RoleKeeper:
         if guild.name not in self.config['guilds']:
             return
 
+        # Try to find missing captains with rich-presence updates
+
+        # App IDs to track
+        app_ids = [
+            554573575047348225, # Wf RU
+            555316726745792534  # Wf international
+        ]
+
+        nickname = None
+        for activity in after.activities + before.activities:
+            if isinstance(activity, discord.Activity):
+                if hasattr(activity, 'application_id') and hasattr(activity, 'large_image_text'):
+                    if activity.application_id in app_ids:
+                        nickname = activity.large_image_text
+                        break
+
+        # This event is indeed a rich-presence update for a tracked application
+        if nickname:
+            for cup_name, db in self.db[guild]['cups'].items():
+
+                captain = db['captains-by-nick'][nickname] if nickname in db['captains-by-nick'] else None
+                # Then only, search for the nicknames
+                if captain and not captain.member:
+                        print('Update "{}" via rich-presence from {}'.format(nickname, str(after)))
+                        await self.update_captain(None, guild, after, nickname, cup_name)
+
+
+    async def on_user_update(self, before, after):
+        guild = after.guild if after.guild else before.guild
+
+        if guild.name not in self.config['guilds']:
+            return
+
         before_discord_id = str(before)
         after_discord_id = str(after)
 
@@ -620,14 +653,18 @@ class RoleKeeper:
             await self.reply(message, 'Group "{}" does not exist'.format(group_id))
             return False
 
-        # Add new captain to the list
-        db['captains'][member.id] = \
+        captain = \
             TeamCaptain(discord_id,
                         team,
                         nick,
                         db['groups'][group_id] if group_id else None,
                         db['cup'])
-        db['captains'][member.id].key = member.id # TODO Workaround
+        captain.key = member.id # TODO Workaround
+
+        # Add new captain to the list
+        db['captains'][member.id] = captain
+        db['captains-by-nick'][nick] = captain
+        db['captains-by-team'][team] = captain
 
         # Trigger update on member
         await self.handle_member_join(member, db)
@@ -659,20 +696,17 @@ class RoleKeeper:
             return False
 
         found = False
-        for key, captain in db['captains'].items():
-            if captain.nickname == nickname:
-                found = True
-                break
-            if captain.team_name == nickname:
-                found = True
-                break
+        captain = db['captains-by-nick'][nickname] if nickname in db['captains-by-nick'] \
+                  else db['captains-by-team'][nickname] if nickname in db['captains-by-team'] \
+                       else None
 
-        if not found:
+        if not captain:
             await self.reply(message, 'Cannot find nickname "{}" in cup {}.'\
                              .format(md_normal(nickname),
                                      db['cup'].name))
             return False
 
+        old_key = captain.key
         # Update captain key in DB
         db['captains'][member.id] = captain
         captain.key = member.id # TODO Workaround
@@ -686,7 +720,10 @@ class RoleKeeper:
         if old_member and old_member != member:
             await self.remove_captain(message, guild, old_member, cup_name)
         else:
-            del db['captains'][key]
+            del db['captains'][old_key]
+
+        db['captains-by-nick'][captain.nickname] = captain
+        db['captains-by-team'][captain.team_name] = captain
 
         return True
 
@@ -716,9 +753,11 @@ class RoleKeeper:
 
         print('Renamed team "{}" to "{}"'.format(team_name, new_name))
 
+        del db['captains-by-team'][team_name]
         for captain in db['captains'].values():
             if captain.team_name == team_name:
                 captain.team_name = new_name
+                db['captains-by-team'][new_name] = captain
 
         if team.role:
             try:
@@ -847,6 +886,8 @@ class RoleKeeper:
             pass
 
         # Remove captain from DB
+        del db['captains-by-nick'][captain.nickname]
+        del db['captains-by-team'][captain.team_name]
         del db['captains'][member.id]
 
         return True
@@ -915,6 +956,7 @@ class RoleKeeper:
 
         # Check that the captain is indeed in our list
         if not captain:
+            await self.on_member_update(member, member)
             #print('WARNING: New user "{}" not in captain list'\
             #      .format(discord_id))
             return
@@ -2097,7 +2139,8 @@ class RoleKeeper:
             captains, groups = self.checked_cups[cup_name]
 
             if db_error:
-                await self.reply(message, error)
+                await self.reply(message, db_error)
+                await reply.delete()
                 return False
 
             db['with_roles'] = can_create_roles
@@ -2110,7 +2153,23 @@ class RoleKeeper:
             for _, captain in captains.items():
                 captain.cup = db['cup']
 
+            captains_by_nick = { c.nickname: c for _, c in captains.items() }
+            captains_by_team = { c.team_name: c for _, c in captains.items() }
+
+            if len(captains_by_nick) != len(captains):
+                await self.reply(message, 'Duplicate Nickname(s)')
+                await reply.delete()
+                return False
+
+            if len(captains_by_team) != len(captains):
+                await self.reply(message, 'Duplicate Team name(s)')
+                await reply.delete()
+                return False
+
             db['captains'] = captains
+            db['captains-by-nick'] = captains_by_nick
+            db['captains-by-team'] = captains_by_team
+
             db['groups'] = groups # TODO cup-ref?
 
             await self.create_all_teams(guild, cup_name)
@@ -2427,30 +2486,24 @@ class RoleKeeper:
         cup_name = db['cup'].name
         information = message.content.strip()
 
-        matching_teamname = []
-        matching_nickname = []
-
-        for discord_id, captain in db['captains'].items():
-            if captain.team and captain.team.name == information:
-                matching_teamname.append(captain)
-            elif captain.nickname == information:
-                matching_nickname.append(captain)
+        matching_nickname = db['captains-by-nick'][information] if information in db['captains-by-nick'] else None
+        matching_teamname = db['captains-by-team'][information] if information in db['captains-by-team'] else None
 
         # If no match, gently delete the message after 5 seconds
-        if len(matching_nickname) == 0 and len(matching_teamname) == 0:
+        if (not matching_nickname) and (not matching_teamname):
             await message.add_reaction('\N{NO ENTRY}')
             await asyncio.sleep(5)
             await message.delete()
             return
 
         # Look up in team names first
-        elif len(matching_teamname) == 1 and len(matching_nickname) == 0:
-            captain = matching_teamname[0]
+        elif matching_teamname and (not matching_nickname):
+            captain = matching_teamname
             ret = await self.update_captain(None, guild, message.author, captain.nickname, cup_name)
 
         # Then only, search for the nicknames
-        elif len(matching_teamname) == 0 and len(matching_nickname) == 1:
-            captain = matching_nickname[0]
+        elif (not matching_teamname) and matching_nickname:
+            captain = matching_nickname
             ret = await self.update_captain(None, guild, message.author, captain.nickname, cup_name)
 
         # More than one match
@@ -2631,6 +2684,10 @@ class RoleKeeper:
         for member in remove_discord_list:
             print('Remove captain {}'.format(str(member)))
             await self.remove_captain(message, guild, member, cup_name)
+
+        # Rebuild indexes
+        db['captains-by-nick'] = { c.nickname: c for c in db['captains'].values() }
+        db['captains-by-team'] = { c.team_name: c for c in db['captains'].values() }
 
         await reply.edit(content='{mention} Updated {count} captains.'\
                         .format(mention=message.author.mention,

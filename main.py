@@ -30,7 +30,7 @@ from rolekeeper import RoleKeeper
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
-#intents.presences = True
+intents.presences = True
 intents.messages = True
 #intents.reactions = True
 client = discord.Client(intents=intents)
@@ -53,6 +53,10 @@ async def on_member_join(member):
 @client.event
 async def on_member_update(before, after):
     await rk.on_member_update(before, after)
+
+@client.event
+async def on_user_update(before, after):
+    await rk.on_user_update(before, after)
 
 @client.event
 async def on_message(message):
