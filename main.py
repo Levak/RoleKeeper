@@ -195,10 +195,11 @@ async def on_message(message):
             if len(parts) > 0:
                 ret = await rk.check_cup(message,
                                          parts[0],
-                                         message.attachments[0] if len(message.attachments) > 0 else None)
+                                         message.attachments[0] if len(message.attachments) > 0 else None,
+                                         pvpgg_link = parts[1] if len(parts) > 1 else None)
             else:
                 await rk.reply(message,
-                               'Too much or not enough arguments:\n```!check_cup name [// TEAMS.csv]```')
+                               'Too much or not enough arguments:\n```!check_cup name [pvp.gg] [// TEAMS.csv]```')
 
         elif command == '!update_cup' and is_admin:
             if len(parts) > 0 and len(message.attachments) > 0:

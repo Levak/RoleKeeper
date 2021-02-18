@@ -209,8 +209,10 @@ class RoleKeeper:
                 discord_id = row[header['discord']].strip()
                 if 'team_name' in header:
                     team_name = row[header['team_name']].strip()
-                else:
+                elif 'teamname' in header:
                     team_name = row[header['teamname']].strip()
+                else:
+                    team_name = row[header['team']].strip()
                 nickname = row[header['nickname']].strip()
 
                 # Remove extra spaces around the bang (#) sign
@@ -417,9 +419,11 @@ class RoleKeeper:
         await self.handle_member_join(member)
 
     async def on_member_update(self, before, after):
-        guild = after.guild if after.guild else before.guild
+        guild = after.guild if hasattr(after, 'guild') and after.guild \
+                else before.guild if hasattr(before, 'guild') \
+                     else None
 
-        if guild.name not in self.config['guilds']:
+        if not guild or guild.name not in self.config['guilds']:
             return
 
         # Try to find missing captains with rich-presence updates
@@ -450,9 +454,11 @@ class RoleKeeper:
 
 
     async def on_user_update(self, before, after):
-        guild = after.guild if after.guild else before.guild
+        guild = after.guild if hasattr(after, 'guild') and after.guild \
+                else before.guild if hasattr(before, 'guild') \
+                     else None
 
-        if guild.name not in self.config['guilds']:
+        if not guild or guild.name not in self.config['guilds']:
             return
 
         before_discord_id = str(before)
@@ -886,9 +892,12 @@ class RoleKeeper:
             pass
 
         # Remove captain from DB
-        del db['captains-by-nick'][captain.nickname]
-        del db['captains-by-team'][captain.team_name]
-        del db['captains'][member.id]
+        if captain.nickname in db['captains-by-nick']:
+            del db['captains-by-nick'][captain.nickname]
+        if captain.team_name in db['captains-by-team']:
+            del db['captains-by-team'][captain.team_name]
+        if member.id in db['captains']:
+            del db['captains'][member.id]
 
         return True
 
@@ -1823,7 +1832,7 @@ class RoleKeeper:
                 await msg.delete()
             except:
                 count = count - 1
-                print('WARNING: No permission to delete in "{}"'.format(channel.name))
+                print('WARNING: No permission to delete in "{}"'.format(msg.channel.name))
                 pass
 
         return count
@@ -2054,13 +2063,60 @@ class RoleKeeper:
         else:
             return None
 
+    async def pvpgg_parse_teams(self, link, captains):
+        connector = aiohttp.TCPConnector(limit=20)
+        client = aiohttp.ClientSession(connector=connector)
+
+        m = re.search('/([0-9]+)/', link)
+        cup_id = m.group(1)
+        teams_url = 'https://pvp.gg/api/tournament/{cup_id}/players'.format(cup_id=cup_id)
+
+        print('Parsing: {}'.format(teams_url))
+        async with client.get(teams_url, params={'pageSize':1}) as response:
+            pagen_json = await response.json()
+
+        totalCount = pagen_json['pagen']['totalCount']
+
+        print('Parsing: {}'.format(teams_url))
+        async with client.get(teams_url, params={'pageSize':totalCount}) as response:
+            teams_json = await response.json()
+
+        captains_lookup = {}
+        # TODO thread pool?
+        for team in teams_json['players']:
+            thash = team['hash']
+            tname = team['name']
+
+            team_url = 'https://pvp.gg/api/team/{thash}'.format(thash=thash)
+            print('Parsing: {}'.format(team_url))
+            async with client.get(team_url) as response:
+                team_json = await response.json()
+
+            for player in team_json['players']['main']:
+                if player['isCaptain']:
+                    captain_ign = player['gameNick']
+                    captain_site = player['tnNick']
+                    captains_lookup[captain_site] = captain_ign
+                    break
+
+        for captain in captains.values():
+            if captain.nickname in captains_lookup:
+                captain_tn = captain.nickname
+                captain_ign = captains_lookup[captain.nickname]
+                captain.nickname = captain_ign
+                print('Found on PVP.GG that {n} is named {ign} in-game'\
+                      .format(n=captain_tn,
+                              ign=captain_ign))
+
+
+
     # Check a CSV file before launching a cup
     # 1. Parse the CSV file
     # 2. For all parsed captains:
     #    A. List all captains not in guild
     #    B. List all captains with invalid Discord ID
     #    C. List all captains with no Discord ID.
-    async def check_cup(self, message, cup_name, attachment, checkonly=True):
+    async def check_cup(self, message, cup_name, attachment, pvpgg_link=None, checkonly=True):
         cup_name = cup_name.upper()
         guild = message.guild
         time_start = time.time()
@@ -2085,6 +2141,10 @@ class RoleKeeper:
             csv = io.StringIO(csv)
             captains, groups = self.parse_teams(csv)
             csv.close()
+
+            # Do we need to parse pvp.gg?
+            if pvpgg_link:
+                await self.pvpgg_parse_teams(pvpgg_link, captains)
 
             # Save it for later in a scratchpad
             self.checked_cups[cup_name] = (captains, groups)
