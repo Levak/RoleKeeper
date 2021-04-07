@@ -125,6 +125,21 @@ class Handle:
             await asyncio.sleep(10)
             return await self.react(reaction, err_count=err_count)
 
+    async def unreact(self, reaction, user, err_count=0):
+        if not self.message:
+            return None
+
+        try:
+            print('removing reaction {} from {}'.format(reaction, str(user)))
+            return await self.message.remove_reaction(reaction, user)
+        except discord.errors.HTTPException as e:
+            print('WARNING: HTTPexception: {}'.format(str(e)))
+            err_count += 1
+            if err_count > 5:
+                return
+            await asyncio.sleep(10)
+            return await self.unreact(reaction, user, err_count=err_count)
+
     async def send(self, msg, err_count=0):
         try:
             return await self.channel.send(content=msg)

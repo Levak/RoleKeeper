@@ -97,6 +97,7 @@ class RoleKeeper:
             autosave = self.config['autosave']
 
         self.sync_db_task = self.cron(autosave, self.sync_db)
+        self.reaction_handlers = {}
 
     def get_config(self, path):
         try:
@@ -152,7 +153,7 @@ class RoleKeeper:
         return { e: header.index(e) for e in header }
 
     # Parse players from CSV file
-    def parse_players(self, csvfile, cup=None, groups={}):
+    def parse_players_ffa(self, csvfile):
         players = []
 
         if csvfile:
@@ -178,6 +179,41 @@ class RoleKeeper:
 
                 nickname = row[header['Player']].strip()
                 players.append(nickname)
+
+        return players
+
+    # Parse players from CSV file
+    def parse_players(self, csvfile):
+        players = []
+
+        if csvfile:
+            dialect = csv.Sniffer().sniff(csvfile.read(1024), delimiters=',;')
+            csvfile.seek(0)
+            reader = csv.reader(csvfile, dialect)
+
+            header = None
+
+            for row in reader:
+                # Skip empty lines and lines starting with #
+                if len(row) <= 0 or row[0].startswith('#'):
+                    # If we didn't parse header yet, first comment is usually it
+                    if not header:
+                        row[0] = row[0][1:] # Delete the '#'
+                        header = self.parse_header(row)
+                    continue
+
+                # If we didn't parse header yet, it's the first line
+                if not header:
+                    header = self.parse_header(row)
+                    continue
+
+                players.append({
+                    'cid': row[header['souzid']].strip(),
+                    'shard': int(row[header['shard']].strip()),
+                    'nickname': row[header['nickname']].strip(),
+                    'teamname': row[header['teamname']].strip(),
+                    'role': int(row[header['role']].strip())
+                })
 
         return players
 
@@ -297,6 +333,17 @@ class RoleKeeper:
             if 'matches' in cup_db:
                 for _, match in cup_db['matches'].items():
                     await match.resume(guild, self, cup_db)
+
+            if 'rewards' in cup_db:
+                for captain, rewards_db in cup_db['rewards'].items():
+                    if 'handle' in rewards_db:
+                        handle = rewards_db['handle']
+                        try:
+                            await handle.resume(guild, self)
+                            print('Resume handle for captain {}'.format(str(captain)))
+                            self.register_reaction_handler(handle.message, self.on_captain_reaction, captain=captain, db=cup_db)
+                        except:
+                            print('Error when resuming handle for captain {}'.format(str(captain)))
 
         # Refill group cache
         self.cache_special_role(guild, 'referee')
@@ -1356,7 +1403,7 @@ class RoleKeeper:
                 return False
 
             csv = io.StringIO(csv)
-            player_names = self.parse_players(csv)
+            player_names = self.parse_players_ffa(csv)
             csv.close()
 
             for player_name in player_names:
@@ -2063,51 +2110,81 @@ class RoleKeeper:
         else:
             return None
 
-    async def pvpgg_parse_teams(self, link, captains):
+    async def pvpgg_parse_teams(self, link, captains=None):
         connector = aiohttp.TCPConnector(limit=20)
         client = aiohttp.ClientSession(connector=connector)
 
         m = re.search('/([0-9]+)/', link)
         cup_id = m.group(1)
+        cup_url = 'https://pvp.gg/api/tournament/{cup_id}'.format(cup_id=cup_id)
         teams_url = 'https://pvp.gg/api/tournament/{cup_id}/players'.format(cup_id=cup_id)
 
-        print('Parsing: {}'.format(teams_url))
-        async with client.get(teams_url, params={'pageSize':1}) as response:
-            pagen_json = await response.json()
+        print('Parsing: {}'.format(cup_url))
+        async with client.get(cup_url) as response:
+            cup_json = await response.json()
 
-        totalCount = pagen_json['pagen']['totalCount']
+        totalCount = cup_json['tournament']['numActiveParticipants']
 
         print('Parsing: {}'.format(teams_url))
         async with client.get(teams_url, params={'pageSize':totalCount}) as response:
             teams_json = await response.json()
 
+        winners = [ None ] * 8
+        all_teams = {}
         captains_lookup = {}
         # TODO thread pool?
         for team in teams_json['players']:
             thash = team['hash']
             tname = team['name']
+            place = team['participatePlace']
+
+            # Bugged grid?
+            if place == 0 and 'status' in team and 'text' in team['status']:
+                if '1-' in team['status']['text']:
+                    place = 1
+                elif 'Финал' in team['status']['text']:
+                    if 'Проигравших' in team['status']['text']:
+                        place = 3
+                    else:
+                        place = 2
+                elif '1/2' in team['status']['text']:
+                    place = 4
+                elif '1/4' in team['status']['text']:
+                    place = 8
+                elif '1/8' in team['status']['text']:
+                    place = 16
+
+            if place != 0:
+                winners.insert(place-1, tname)
 
             team_url = 'https://pvp.gg/api/team/{thash}'.format(thash=thash)
             print('Parsing: {}'.format(team_url))
             async with client.get(team_url) as response:
                 team_json = await response.json()
 
-            for player in team_json['players']['main']:
+            all_players = []
+            for player in team_json['players']['main'] + team_json['players']['spare']:
+                ign = player['gameNick']
+                all_players.append(ign)
+
                 if player['isCaptain']:
-                    captain_ign = player['gameNick']
                     captain_site = player['tnNick']
-                    captains_lookup[captain_site] = captain_ign
-                    break
+                    captains_lookup[captain_site] = ign
 
-        for captain in captains.values():
-            if captain.nickname in captains_lookup:
-                captain_tn = captain.nickname
-                captain_ign = captains_lookup[captain.nickname]
-                captain.nickname = captain_ign
-                print('Found on PVP.GG that {n} is named {ign} in-game'\
-                      .format(n=captain_tn,
-                              ign=captain_ign))
+            all_teams[tname] = all_players
 
+        if captains:
+            for captain in captains.values():
+                if captain.nickname in captains_lookup:
+                    captain_tn = captain.nickname
+                    captain_ign = captains_lookup[captain.nickname]
+                    captain.nickname = captain_ign
+                    print('Found on PVP.GG that {n} is named {ign} in-game'\
+                          .format(n=captain_tn,
+                                  ign=captain_ign))
+
+        winners = [ t for t in winners if t ]
+        return all_teams, winners, cup_json
 
 
     # Check a CSV file before launching a cup
@@ -2756,3 +2833,313 @@ class RoleKeeper:
                .format(count=count))
 
         return True
+
+    # Ask reward sharing to captains that won the cup
+    async def start_rewards(self, message, cup_name, channel, pvpgg_link, players_csv):
+        guild = message.guild
+
+        db, error = self.get_cup_db(guild, cup_name)
+        if error:
+            await self.reply(message, error)
+            return False
+
+        teams, winners, cupinfo = await self.pvpgg_parse_teams(pvpgg_link)
+
+        in_players = []
+        if players_csv:
+            # Fetch the CSV file and parse it
+            in_csv = await self.fetch_text_attachment(players_csv)
+
+            if not in_csv:
+                return False
+
+            in_csv = io.StringIO(in_csv)
+            in_players = self.parse_players(in_csv)
+            in_csv.close()
+
+            teams = {}
+            for p in in_players:
+                if p['teamname'] not in teams:
+                    teams[p['teamname']] = []
+                teams[p['teamname']].append(p['nickname'])
+
+        db['players'] = in_players
+
+        rewards = cupinfo['tournament']['prizes']
+
+        max_place = 0
+        for reward in rewards:
+            if 'ranges' in reward:
+                for ran in reward['ranges']:
+                    if 'placeTo' in ran and int(ran['placeTo']) > max_place:
+                        max_place = int(ran['placeTo'])
+
+        winners = winners[:max_place]
+
+        print('Teams:', teams)
+        print('Winners:', winners)
+        print('Rewards:', rewards)
+
+        db['rewards_modified'] = True
+        db['rewards'] = { }
+        for i in range(len(winners)):
+            if winners[i] not in db['captains-by-team']:
+                await self.reply(message, 'Could not find winner captain for team {}'.format(winners[i]))
+                return False
+            if winners[i] not in teams: # TODO
+                await self.reply(message, 'Could not find winner team {}'.format(winners[i]))
+                return False
+
+            players = teams[winners[i]]
+            captain = db['captains-by-team'][winners[i]]
+            rewards_for_team = {}
+            place = i + 1
+            for prize in rewards:
+                prize_name = 'kredits' if prize['type'] == 7 \
+                             else 'crowns' if 'crown' in prize['name'].lower() \
+                                  else 'achievements' if 'achiev' in prize['name'] else prize['name']
+                for prange in prize['ranges']:
+                    prize_count = int(prange['count'])
+                    if place >= int(prange['placeFrom']) and place <= int(prange['placeTo']):
+                        rewards_for_team[prize_name] = prize_count
+
+            await self.ask_reward_to_captain(db, channel, captain, rewards_for_team, players)
+
+        return True
+
+    REACT_READY = '\N{WHITE HEAVY CHECK MARK}'
+    REACT_CANCEL = '\N{MEMO}'
+
+    async def ask_reward_to_captain(self, db, channel, captain, rewards_for_team, players):
+        numbered_reactions = [ '{}\N{COMBINING ENCLOSING KEYCAP}'.format(i) for i in range(1, 10) ]
+        reactions = { numbered_reactions[i]: players[i] for i in range(len(players)) }
+        handle = Handle(self, channel=channel)
+
+        db['rewards'][captain] = {
+            'handle': handle,
+            'captain': captain,
+            'rewards': rewards_for_team,
+            'reactions': reactions,
+            'players': players,
+            'distribution': { players[i]: i < 5 for i in range(len(players)) },
+            'ready': True,
+            'validated': False
+        }
+
+        handle.message = await handle.send(self.get_reward_message(db, captain))
+
+        for r in reactions.keys():
+            await handle.react(r)
+        await handle.react(self.REACT_READY)
+
+        self.register_reaction_handler(handle.message, self.on_captain_reaction, captain=captain, db=db)
+
+    def get_reward_message(self, db, captain, toolate=False):
+        rewards_db = db['rewards'][captain]
+        rewards_for_team = rewards_db['rewards']
+        reactions = rewards_db['reactions']
+        players = rewards_db['players']
+        distrib = rewards_db['distribution'] if rewards_db['ready'] or not toolate \
+                  else { players[i]: i < 5 for i in range(len(players)) }
+
+        info = {
+            'mention': captain.member.mention if captain.member else captain.team.role.mention if captain.team.role else captain.nickname,
+            'reward_types': '/'.join(list(rewards_for_team.keys())),
+            'cupname':db['cup'].name,
+            'players':'\n '.join([
+               '\N{WRAPPED PRESENT}{} `{}`'.format(r, p) if distrib[p] \
+               else '\N{CROSS MARK}{} ~~`{}`~~'.format(r, p) \
+               for r, p in reactions.items()
+            ])
+        }
+
+        if toolate:
+            msg = '''
+{mention} The following players will receive {reward_types} for the "{cupname}" cup:
+ {players}
+'''.format(**info)
+        else:
+            msg = '''
+{mention} Choose who will receive {reward_types} for the "{cupname}" cup:
+ {players}
+When finished, click on :white_check_mark: and :pencil: to edit.
+'''.format(**info)
+
+        return msg
+
+    async def on_captain_reaction(self, event, reaction, user, message, captain, db):
+        handle = Handle(self, message=message)
+
+        if event != 'add':
+            #print('INFO: Removed reaction {}'.format(reaction))
+            return
+
+        if user == message.author:
+            #print('INFO: User {} reacted to his own message'.format(user))
+            return
+
+        await handle.unreact(reaction, user)
+
+        is_admin = message.author.guild_permissions.manage_roles
+        is_ref = discord.utils.get(message.author.roles, name=self.config['roles']['referee']['name']) or is_admin
+
+        if user != captain.member and not is_ref:
+            print('INFO: User {} reacted but is not captain {}'.format(user, captain.member))
+            return
+
+        rewards_db = db['rewards'][captain]
+        reactions = rewards_db['reactions']
+        distrib = rewards_db['distribution']
+        emoji = reaction
+
+        if emoji in reactions:
+            if not rewards_db['validated']:
+                player = reactions[emoji]
+                distrib[player] = not distrib[player]
+                db['rewards_modified'] = True
+            else:
+                print('INFO: Rewards already validated')
+                return
+        elif emoji == self.REACT_READY and rewards_db['ready']:
+            #await handle.unreact(self.REACT_READY, message.author)
+            await handle.message.clear_reactions()
+            await handle.react(self.REACT_CANCEL)
+            db['rewards_modified'] = True
+            rewards_db['validated'] = True
+        elif emoji == self.REACT_CANCEL and rewards_db['validated']:
+            await handle.message.clear_reactions()
+            #await handle.unreact(self.REACT_CANCEL, message.author)
+            for r in rewards_db['reactions'].keys():
+                await handle.react(r)
+            await handle.react(self.REACT_READY)
+            db['rewards_modified'] = True
+            rewards_db['validated'] = False
+        else:
+            print('INFO: Unknown reaction {}'.format(reaction))
+            return
+
+        count = sum(distrib.values())
+        if count >= 5 and not rewards_db['ready']:
+            await handle.react(self.REACT_READY)
+            rewards_db['ready'] = True
+        if count < 5 and rewards_db['ready']:
+            await handle.unreact(self.REACT_READY, message.author)
+            rewards_db['ready'] = False
+
+        await handle.edit(self.get_reward_message(db, captain))
+
+    # Export rewards lists decided by captains
+    async def export_rewards(self, message, cup_name, players_csv):
+        guild = message.guild
+
+        db, error = self.get_cup_db(guild, cup_name)
+        if error:
+            await self.reply(message, error)
+            return False
+        if 'rewards' not in db:
+            await self.reply(message, 'No rewards yet')
+            return False
+
+        in_players = []
+        if players_csv:
+            # Fetch the CSV file and parse it
+            in_csv = await self.fetch_text_attachment(players_csv)
+
+            if not in_csv:
+                return False
+
+            in_csv = io.StringIO(in_csv)
+            in_players = self.parse_players(in_csv)
+            in_csv.close()
+        else:
+            if 'players' not in db or not db['players']:
+                await self.reply(message, 'Please attach the list of players as CSV')
+                return False
+            in_players = db['players']
+
+        reward_types = []
+        for captain, rewards_db in db['rewards'].items():
+            for prize_name in rewards_db['rewards'].keys():
+                if prize_name not in reward_types:
+                    reward_types.append(prize_name)
+
+        filename = 'rewards-{}.csv'.format(db['cup'].name)
+        out_csv = io.BytesIO()
+        out_csv.write('#cid;shard;nickname;teamname;{}\n'.format(';'.join(reward_types)).encode())
+
+        for captain, rewards_db in db['rewards'].items():
+            players = rewards_db['players']
+            distrib = rewards_db['distribution'] if rewards_db['ready'] else { players[i]: i < 5 for i in range(len(players)) }
+            for player_name in players:
+                player = next(p for p in in_players if p['nickname'] == player_name)
+                r_for_p = rewards_db['rewards'].copy() \
+                          if player_name in distrib and distrib[player_name] \
+                             else {}
+                for prize, count in r_for_p.items():
+                    if prize != 'achievements':
+                        count = count // sum(distrib.values())
+                    r_for_p[prize] = str(count)
+
+                rewards = [ r_for_p[r] if r in r_for_p else '' for r in reward_types ]
+                out_csv.write('{p[cid]};{p[shard]};{p[nickname]};{p[teamname]};{r}\n'\
+                              .format(p=player, r=';'.join(rewards)).encode())
+
+        out_csv.seek(0)
+
+        msg = 'Here is the reward list'
+        try:
+            await message.channel.send(file=discord.File(fp=out_csv,
+                                                         filename=filename),
+                                       content=msg)
+            print ('Sent reward list')
+        except Exception as e:
+            print ('ERROR: Failed to send reward list')
+            raise e
+
+        out_csv.close()
+
+        db['rewards_modified'] = False
+        return True
+
+    # Stop reward from being collected
+    async def stop_rewards(self, message, cup_name):
+        guild = message.guild
+
+        db, error = self.get_cup_db(guild, cup_name)
+        if error:
+            await self.reply(message, error)
+            return False
+
+        if 'rewards_modified' in db and db['rewards_modified']:
+            if not await self.export_rewards(message, cup_name, None):
+                return False
+
+        if 'rewards' not in db:
+            await self.reply(message, 'No reward set yet. Use `!start_rewards` first')
+            return False
+
+        for captain, rewards_db in db['rewards'].items():
+            handle = rewards_db['handle']
+            if handle and handle.message:
+                self.unregister_reaction_handler(handle.message)
+                try:
+                    await handle.message.clear_reactions()
+                    await handle.edit(self.get_reward_message(db, captain, toolate=True))
+                except:
+                    pass
+
+        del db['rewards']
+        if 'rewards_modified' in db:
+            del db['rewards_modified']
+
+        return True
+
+    async def on_reaction_event(self, event, reaction, message, user):
+        if message.id in self.reaction_handlers:
+            d = self.reaction_handlers[message.id]
+            await d['cb'](event, reaction, user, message, *d['a'], **d['kw'])
+
+    def register_reaction_handler(self, message, callback, *args, **kwargs):
+        self.reaction_handlers[message.id] = { 'cb': callback, 'a': args, 'kw': kwargs }
+    def unregister_reaction_handler(self, message):
+        del self.reaction_handlers[message.id]

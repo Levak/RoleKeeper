@@ -32,7 +32,7 @@ intents.guilds = True
 intents.members = True
 intents.presences = True
 intents.messages = True
-#intents.reactions = True
+intents.reactions = True
 client = discord.Client(intents=intents)
 
 
@@ -57,6 +57,29 @@ async def on_member_update(before, after):
 @client.event
 async def on_user_update(before, after):
     await rk.on_user_update(before, after)
+
+client.cached_reaction_messages = {}
+async def get_message(guild_id, channel_id, message_id):
+    if message_id not in client.cached_reaction_messages:
+        guild = client.get_guild(guild_id)
+        channel = guild.get_channel(channel_id)
+        message = await channel.fetch_message(message_id)
+        client.cached_reaction_messages[message_id] = message
+    return client.cached_reaction_messages[message_id]
+
+@client.event
+async def on_raw_reaction_add(payload):
+    message = await get_message(payload.guild_id, payload.channel_id, payload.message_id)
+    user = client.get_user(payload.user_id)
+    reaction = payload.emoji.name
+    await rk.on_reaction_event('add', reaction, message, user)
+
+@client.event
+async def on_raw_reaction_remove(payload):
+    message = await get_message(payload.guild_id, payload.channel_id, payload.message_id)
+    user = client.get_user(payload.user_id)
+    reaction = payload.emoji.name
+    await rk.on_reaction_event('remove', reaction, message, user)
 
 @client.event
 async def on_message(message):
@@ -176,6 +199,28 @@ async def on_message(message):
         elif command == '!captains' and is_admin:
             ret = await rk.export_captains(message,
                                            parts[0] if len(parts) > 0 else '')
+
+        elif command == '!start_rewards' and is_admin:
+            if len(parts) > 2 and len(message.channel_mentions) > 0:
+                ret = await rk.start_rewards(message,
+                                             parts[0],
+                                             message.channel_mentions[0],
+                                             parts[2],
+                                             message.attachments[0] if len(message.attachments) > 0 else None)
+            else:
+                await rk.reply(message,
+                               'Too much or not enough arguments:\n```!start_rewards name #channel pvp.gg // [PLAYERS_CID.csv]```')
+        elif command == '!export_rewards' and is_admin:
+            if len(parts) > 0:
+                ret = await rk.export_rewards(message,
+                                              parts[0],
+                                              message.attachments[0] if len(message.attachments) > 0 else None)
+            else:
+                await rk.reply(message,
+                               'Too much or not enough arguments:\n```!export_rewards name // [PLAYERS_CID.csv]```')
+        elif command == '!stop_rewards' and is_admin:
+            ret = await rk.stop_rewards(message,
+                                        parts[0] if len(parts) > 0 else '')
 
         elif command == '!stats' and is_admin:
             ret = await rk.export_stats(message,
