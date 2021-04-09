@@ -209,11 +209,11 @@ async def on_message(message):
                 await rk.reply(message,
                                'Too much or not enough arguments:\n```!set_players name // PLAYERS_CID.csv```')
         elif command == '!start_rewards' and is_admin:
-            if len(parts) > 2 and len(message.channel_mentions) > 0:
+            if len(parts) > 1 and len(message.channel_mentions) > 0:
                 ret = await rk.start_rewards(message,
                                              parts[0],
                                              message.channel_mentions[0],
-                                             parts[2],
+                                             parts[2] if len(parts) > 2 else None,
                                              message.attachments[0] if len(message.attachments) > 0 else None)
             else:
                 await rk.reply(message,

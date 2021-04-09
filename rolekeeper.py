@@ -2183,9 +2183,6 @@ class RoleKeeper:
 
             all_teams[tname] = all_players
 
-        if active_teams > 1:
-            return all_teams, None, cup_json, 'Too many active teams'
-
         if captains:
             for captain in captains.values():
                 if captain.nickname in captains_lookup:
@@ -2195,6 +2192,9 @@ class RoleKeeper:
                     print('Found on PVP.GG that {n} is named {ign} in-game'\
                           .format(n=captain_tn,
                                   ign=captain_ign))
+
+        if active_teams > 1:
+            return all_teams, None, cup_json, 'Too many active teams'
 
         winners = [ t for t in winners if t ]
         return all_teams, winners, cup_json, None
@@ -2237,10 +2237,12 @@ class RoleKeeper:
                 await self.pvpgg_parse_teams(pvpgg_link, captains)
 
             # Save it for later in a scratchpad
-            self.checked_cups[cup_name] = (captains, groups)
+            self.checked_cups[cup_name] = (captains, groups, pvpgg_link)
 
         elif cup_name in self.checked_cups:
-            captains, groups = self.checked_cups[cup_name]
+            captains, groups, link = self.checked_cups[cup_name]
+            if not pvpgg_link:
+                pvpgg_link = link
 
         elif checkonly and not db_error:
             captains, groups = db['captains'], db['groups']
@@ -2286,7 +2288,7 @@ class RoleKeeper:
 
         # If this is not just a check, update database
         if not checkonly:
-            captains, groups = self.checked_cups[cup_name]
+            #captains, groups, link = self.checked_cups[cup_name]
 
             if db_error:
                 await self.reply(message, db_error)
@@ -2321,6 +2323,9 @@ class RoleKeeper:
             db['captains-by-team'] = captains_by_team
 
             db['groups'] = groups # TODO cup-ref?
+
+            if pvpgg_link:
+                db['pvpgg'] = pvpgg_link
 
             await self.create_all_teams(guild, cup_name)
 
@@ -2488,8 +2493,8 @@ class RoleKeeper:
         cup_name = cup_name.upper()
         guild = message.guild
 
-        if cup_name.upper() in self.checked_cups:
-            del self.checked_cups[cup_name.upper()]
+        if cup_name in self.checked_cups:
+            del self.checked_cups[cup_name]
             return True
 
         await self.desync_cup(message, cup_name)
@@ -2883,6 +2888,14 @@ class RoleKeeper:
         if error:
             await self.reply(message, error)
             return False
+
+        if not pvpgg_link:
+            if 'pvpgg' not in db or not db['pvpgg']:
+                await self.reply(message, 'Missing link to cup')
+                return False
+            pvpgg_link = db['pvpgg']
+        else:
+            db['pvpgg'] = pvpgg_link
 
         teams, winners, cupinfo, error = await self.pvpgg_parse_teams(pvpgg_link)
 
