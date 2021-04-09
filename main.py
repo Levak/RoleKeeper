@@ -200,6 +200,14 @@ async def on_message(message):
             ret = await rk.export_captains(message,
                                            parts[0] if len(parts) > 0 else '')
 
+        elif command == '!set_players' and is_admin:
+            if len(parts) > 0 and len(message.attachments) > 0:
+                ret = await rk.set_players(message,
+                                           parts[0],
+                                           message.attachments[0])
+            else:
+                await rk.reply(message,
+                               'Too much or not enough arguments:\n```!set_players name // PLAYERS_CID.csv```')
         elif command == '!start_rewards' and is_admin:
             if len(parts) > 2 and len(message.channel_mentions) > 0:
                 ret = await rk.start_rewards(message,

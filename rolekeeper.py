@@ -956,7 +956,8 @@ class RoleKeeper:
             return False
 
         db['teams'] = {}
-        for _, captain in db['captains'].items():
+        teams = list(db['captains'].values())
+        for captain in teams:
             team = await self.create_team(guild, db, captain.team_name)
             captain.team = team
 
@@ -2123,6 +2124,9 @@ class RoleKeeper:
         async with client.get(cup_url) as response:
             cup_json = await response.json()
 
+        if not cup_json:
+            return None, None, None, 'Could not parse cup data via API'
+
         totalCount = cup_json['tournament']['numActiveParticipants']
 
         print('Parsing: {}'.format(teams_url))
@@ -2133,6 +2137,7 @@ class RoleKeeper:
         all_teams = {}
         captains_lookup = {}
         # TODO thread pool?
+        active_teams = 0
         for team in teams_json['players']:
             thash = team['hash']
             tname = team['name']
@@ -2140,9 +2145,11 @@ class RoleKeeper:
 
             # Bugged grid?
             if place == 0 and 'status' in team and 'text' in team['status']:
+                if 'activity_state' in team['status'] and team['status']['activity_state'] == 'active':
+                    active_teams += 1
                 if '1-' in team['status']['text']:
                     place = 1
-                elif 'Финал' in team['status']['text']:
+                elif 'Финал' in team['status']['text'].lower():
                     if 'Проигравших' in team['status']['text']:
                         place = 3
                     else:
@@ -2162,6 +2169,9 @@ class RoleKeeper:
             async with client.get(team_url) as response:
                 team_json = await response.json()
 
+            if not team_json:
+                return None, None, cup_json, 'Could not parse team data via API'
+
             all_players = []
             for player in team_json['players']['main'] + team_json['players']['spare']:
                 ign = player['gameNick']
@@ -2172,6 +2182,9 @@ class RoleKeeper:
                     captains_lookup[captain_site] = ign
 
             all_teams[tname] = all_players
+
+        if active_teams > 1:
+            return all_teams, None, cup_json, 'Too many active teams'
 
         if captains:
             for captain in captains.values():
@@ -2184,7 +2197,7 @@ class RoleKeeper:
                                   ign=captain_ign))
 
         winners = [ t for t in winners if t ]
-        return all_teams, winners, cup_json
+        return all_teams, winners, cup_json, None
 
 
     # Check a CSV file before launching a cup
@@ -2834,6 +2847,34 @@ class RoleKeeper:
 
         return True
 
+    # Save players CSID for the cup (for rewards)
+    async def set_players(self, message, cup_name, players_csv):
+        guild = message.guild
+
+        db, error = self.get_cup_db(guild, cup_name)
+        if error:
+            await self.reply(message, error)
+            return False
+
+        in_players = []
+
+        # Fetch the CSV file and parse it
+        in_csv = await self.fetch_text_attachment(players_csv)
+
+        if not in_csv:
+            return False
+
+        in_csv = io.StringIO(in_csv)
+        in_players = self.parse_players(in_csv)
+        in_csv.close()
+
+        if not in_players:
+            return False
+
+        db['players'] = in_players
+
+        return True
+
     # Ask reward sharing to captains that won the cup
     async def start_rewards(self, message, cup_name, channel, pvpgg_link, players_csv):
         guild = message.guild
@@ -2843,27 +2884,30 @@ class RoleKeeper:
             await self.reply(message, error)
             return False
 
-        teams, winners, cupinfo = await self.pvpgg_parse_teams(pvpgg_link)
+        teams, winners, cupinfo, error = await self.pvpgg_parse_teams(pvpgg_link)
 
-        in_players = []
+        if error:
+            await self.reply(message, error)
+            return False
+
+        if len(winners) == 0:
+            await self.reply(message, 'Could not find winners')
+            return False
+
         if players_csv:
-            # Fetch the CSV file and parse it
-            in_csv = await self.fetch_text_attachment(players_csv)
-
-            if not in_csv:
+            if not await set_players(self, message, cup_name, players_csv):
                 return False
 
-            in_csv = io.StringIO(in_csv)
-            in_players = self.parse_players(in_csv)
-            in_csv.close()
+        if not 'players' in db or not db['players'] or len(db['players']) == 0:
+            await self.reply(message, 'Please attach a CSV to the command and try again. Or use !set_players')
+            return False
 
-            teams = {}
-            for p in in_players:
-                if p['teamname'] not in teams:
-                    teams[p['teamname']] = []
-                teams[p['teamname']].append(p['nickname'])
-
-        db['players'] = in_players
+        # Repopulate parsed team compositions
+        teams = {}
+        for p in db['players']:
+            if p['teamname'] not in teams:
+                teams[p['teamname']] = []
+            teams[p['teamname']].append(p['nickname'])
 
         rewards = cupinfo['tournament']['prizes']
 
@@ -3040,22 +3084,13 @@ When finished, click on :white_check_mark: and :pencil: to edit.
             await self.reply(message, 'No rewards yet')
             return False
 
-        in_players = []
         if players_csv:
-            # Fetch the CSV file and parse it
-            in_csv = await self.fetch_text_attachment(players_csv)
-
-            if not in_csv:
+            if not await set_players(self, message, cup_name, players_csv):
                 return False
 
-            in_csv = io.StringIO(in_csv)
-            in_players = self.parse_players(in_csv)
-            in_csv.close()
-        else:
-            if 'players' not in db or not db['players']:
-                await self.reply(message, 'Please attach the list of players as CSV')
-                return False
-            in_players = db['players']
+        if not 'players' in db or not db['players'] or len(db['players']) == 0:
+            await self.reply(message, 'Please attach a CSV to the command and try again. Or use !set_players')
+            return False
 
         reward_types = []
         for captain, rewards_db in db['rewards'].items():
@@ -3071,7 +3106,7 @@ When finished, click on :white_check_mark: and :pencil: to edit.
             players = rewards_db['players']
             distrib = rewards_db['distribution'] if rewards_db['ready'] else { players[i]: i < 5 for i in range(len(players)) }
             for player_name in players:
-                player = next(p for p in in_players if p['nickname'] == player_name)
+                player = next(p for p in db['players'] if p['nickname'] == player_name)
                 r_for_p = rewards_db['rewards'].copy() \
                           if player_name in distrib and distrib[player_name] \
                              else {}
