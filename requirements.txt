@@ -7,7 +7,7 @@ discord.py==1.5.1
 idna==2.10
 idna-ssl==1.1.0
 multidict==4.7.6
-Pillow==8.0.1
+Pillow==8.2.0
 six==1.15.0
 soupsieve==2.0.1
 transliterate==1.10.2
